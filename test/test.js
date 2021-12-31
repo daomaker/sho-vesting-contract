@@ -92,7 +92,6 @@ describe("SHO smart contract", function() {
         expect(await contract.startTime()).to.equal(startTime);
         expect(await contract.feeCollector()).to.equal(feeCollector.address);
         expect(await contract.baseFeePercentage()).to.equal(baseFee);
-        expect(await contract.passedUnlocksCount()).to.equal(0);
 
         await whitelistUsers(whitelist);
 
@@ -143,7 +142,7 @@ describe("SHO smart contract", function() {
         await contract.claimUser1();
         const userBalanceAfter = await shoToken.balanceOf(user.address);
         const userInfoAfter = await contract.users1(user.address);
-        const passedUnlocksCount = await contract.passedUnlocksCount();
+        const passedUnlocksCount = await contract.getPassedUnlocksCount();
         expect(userBalanceAfter).to.equal(userBalanceBefore.add(amountToClaim));
 
         expect(userInfoBefore.allocation).to.equal(userInfoAfter.allocation);
@@ -193,7 +192,7 @@ describe("SHO smart contract", function() {
         await contract.claimUser2(extraAmount);
         const userBalanceAfter = await shoToken.balanceOf(user.address);
         const userInfoAfter = await contract.users2(user.address);
-        const passedUnlocksCount = await contract.passedUnlocksCount();
+        const passedUnlocksCount = await contract.getPassedUnlocksCount();
         expect(userBalanceAfter).to.equal(userBalanceBefore.add(result.amountToClaim));
 
         expect(userInfoBefore.allocation).to.equal(userInfoAfter.allocation);
@@ -232,7 +231,7 @@ describe("SHO smart contract", function() {
         await contract.eliminateUsers1([user.address]);
         const contractBalanceAfter = await shoToken.balanceOf(contract.address);
         const userInfoAfter = await contract.users1(user.address);
-        const passedUnlocksCount = await contract.passedUnlocksCount();
+        const passedUnlocksCount = await contract.getPassedUnlocksCount();
         const extraFees1AllocationAfter = await contract.extraFees1Allocation();
         const extraFees1AllocationUncollectableAfter = await contract.extraFees1AllocationUncollectable();
         expect(contractBalanceAfter).to.equal(contractBalanceBefore);
@@ -382,7 +381,7 @@ describe("SHO smart contract", function() {
                 300000,
                 {
                     wallets: [user1.address],
-                    allocations: [1000],
+                    allocations: [1000000],
                     options: [2]
                 }
             );
@@ -393,11 +392,11 @@ describe("SHO smart contract", function() {
 
         it("second unlock - user 1 claims", async() => {
             await time.increase(1000);
-            await claim2(user1, false, 0, false, 700, 70, 70, 0);
+            await claim2(user1, false, 0, false, 700000, 70000, 70000, 0);
         });
 
         it("second unlock - collecting fees", async() => {
-            await collectFees(false, 300, 0);
+            await collectFees(false, 300000, 0);
             await collectFees(true);
         });
     });

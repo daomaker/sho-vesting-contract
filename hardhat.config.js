@@ -1,7 +1,7 @@
 require('dotenv').config();
 require("@nomiclabs/hardhat-waffle");
 require("@nomiclabs/hardhat-web3");
-//require("hardhat-gas-reporter");
+require("hardhat-gas-reporter");
 require("hardhat-abi-exporter");
 require("@nomiclabs/hardhat-etherscan");
 

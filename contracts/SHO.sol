@@ -39,7 +39,7 @@ contract SHO is Ownable, ReentrancyGuard {
     uint120[] public extraFees2;
 
     uint120 public globalTotalAllocation;
-    uint16 public passedUnlocksCount;
+    uint16 passedUnlocksCount;
 
     uint16 public collectedFeesUnlocksCount;
     uint120 public extraFees1Allocation;
@@ -327,18 +327,17 @@ contract SHO is Ownable, ReentrancyGuard {
         Updates passedUnlocksCount.
     */
     function update() public {
-        require(block.timestamp >= startTime, "SHO: before startTime");
-
-        uint16 _passedUnlocksCount = _getPassedUnlockCount();
+        uint16 _passedUnlocksCount = getPassedUnlocksCount();
         if (_passedUnlocksCount > passedUnlocksCount) {
             passedUnlocksCount = _passedUnlocksCount;
             emit Update(_passedUnlocksCount);
         }
     }
 
-    // PRIVATE FUNCTIONS
+    // PUBLIC VIEW FUNCTIONS
 
-    function _getPassedUnlockCount() private view returns (uint16 _passedUnlocksCount) {
+    function getPassedUnlocksCount() public view returns (uint16 _passedUnlocksCount) {
+        require(block.timestamp >= startTime, "SHO: before startTime");
         uint256 timeSinceStart = block.timestamp - startTime;
         uint256 maxReleases = unlockPeriods.length;
         _passedUnlocksCount = passedUnlocksCount;
@@ -347,6 +346,8 @@ contract SHO is Ownable, ReentrancyGuard {
             _passedUnlocksCount++;
         }
     }
+
+    // PRIVATE FUNCTIONS
 
     function _getClaimableFromPreviousUnlocks(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 1 ? unlockPercentages[user.claimedUnlocksCount - 2] : 0;
