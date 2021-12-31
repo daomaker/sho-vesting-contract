@@ -27,26 +27,19 @@ describe("SHO smart contract", function() {
             .to.be.revertedWith("SHO: some users are already whitelisted");
 
 
-        let globalTotalAllocation1 = 0;
-        let globalTotalAllocation2 = 0;
+        let globalTotalAllocation = 0;
         for (let i = 0; i < whitelist.wallets.length; i++) {
             const userInfo = await contract[`users${whitelist.options[i]}`](whitelist.wallets[i]);
             expect(userInfo.allocation).to.equal(allocations[i]);
 
-            if (whitelist.options[i] == 1) {
-                globalTotalAllocation1 += whitelist.allocations[i];
-            } else {
-                globalTotalAllocation2 += whitelist.allocations[i];
-            }
+            globalTotalAllocation += whitelist.allocations[i];
         }
         
-        await shoToken.transfer(contract.address, parseUnits(globalTotalAllocation1));
-        await shoToken.transfer(contract.address, parseUnits(globalTotalAllocation2));
+        await shoToken.transfer(contract.address, parseUnits(globalTotalAllocation));
         await expect(contract.whitelistUsers([owner.address], [1], [2]))
             .to.be.revertedWith("SHO: whitelisting too late");
 
-        expect(await contract.globalTotalAllocation1()).to.equal(parseUnits(globalTotalAllocation1));
-        expect(await contract.globalTotalAllocation2()).to.equal(parseUnits(globalTotalAllocation2));
+        expect(await contract.globalTotalAllocation()).to.equal(parseUnits(globalTotalAllocation));
     }
 
     const testConstructorRequireStatements = async(unlockPercentages, unlockPeriods, baseFee, startTime) => {
@@ -73,6 +66,9 @@ describe("SHO smart contract", function() {
 
         await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, 10000000))
             .to.be.revertedWith("SHO: start time must be in future"); 
+
+        await expect(Contract.deploy(shoToken.address, [100000, 100000], [1, 1], baseFee, feeCollector.address, startTime))
+            .to.be.revertedWith("SHO: invalid unlock percentages"); 
     }
 
     const init = async(unlockPercentages, unlockPeriods, baseFee, whitelist, shoTokenDecimals = 18) => {
@@ -123,6 +119,40 @@ describe("SHO smart contract", function() {
         await contract.collectFees();
         const collectorBalanceAfter = await shoToken.balanceOf(feeCollector.address);
         expect(collectorBalanceAfter).to.equal(collectorBalanceBefore.add(result.baseFee).add(result.extraFee));
+    }
+
+    const claim1 = async(
+        user,
+        nothingToClaim,
+        expectedClaimed
+    ) => {
+        contract = contract.connect(user);
+
+        if (nothingToClaim) {
+            await expect(contract.claimUser1()).to.be.revertedWith("SHO: nothing to claim");
+            return;
+        }
+
+        expectedClaimed = parseUnits(expectedClaimed);
+
+        const amountToClaim = await contract.callStatic.claimUser1();
+        expect(amountToClaim).to.closeTo(expectedClaimed, PRECISION_LOSS);
+
+        const userBalanceBefore = await shoToken.balanceOf(user.address);
+        const userInfoBefore = await contract.users1(user.address);
+        await contract.claimUser1();
+        const userBalanceAfter = await shoToken.balanceOf(user.address);
+        const userInfoAfter = await contract.users1(user.address);
+        const passedUnlocksCount = await contract.passedUnlocksCount();
+        expect(userBalanceAfter).to.equal(userBalanceBefore.add(amountToClaim));
+
+        expect(userInfoBefore.allocation).to.equal(userInfoAfter.allocation);
+        if (userInfoAfter.eliminatedAfterUnlock == 0) {
+            expect(userInfoAfter.claimedUnlocksCount).to.equal(passedUnlocksCount);
+        } else {
+            expect(userInfoAfter.claimedUnlocksCount).to.equal(userInfoAfter.eliminatedAfterUnlock);
+        }
+        
     }
 
     const claim2 = async(
@@ -181,26 +211,37 @@ describe("SHO smart contract", function() {
 
     const eliminate = async(
         user, 
-        eliminatedAlready
+        eliminatedAlready,
+        expectedExtraFee1Allocation,
+        expectedExtraFee1AllocationUncollectable
     ) => {
         contract = contract.connect(owner);
 
         if (eliminatedAlready) {
-            await expect(contract.eliminateOption1Users([user.address])).to.be.revertedWith("SHO: some user already eliminated");
+            await expect(contract.eliminateUsers1([user.address])).to.be.revertedWith("SHO: some user already eliminated");
             return;
         }
 
+        expectedExtraFee1Allocation = parseUnits(expectedExtraFee1Allocation);
+        expectedExtraFee1AllocationUncollectable = parseUnits(expectedExtraFee1AllocationUncollectable);
+
         const contractBalanceBefore = await shoToken.balanceOf(contract.address);
-        const userInfoBefore = await contract.users(user.address);
-        await contract.eliminateOption1Users([user.address]);
+        const userInfoBefore = await contract.users1(user.address);
+        const extraFees1AllocationBefore = await contract.extraFees1Allocation();
+        const extraFees1AllocationUncollectableBefore = await contract.extraFees1AllocationUncollectable();
+        await contract.eliminateUsers1([user.address]);
         const contractBalanceAfter = await shoToken.balanceOf(contract.address);
-        const userInfoAfter = await contract.users(user.address);
+        const userInfoAfter = await contract.users1(user.address);
+        const passedUnlocksCount = await contract.passedUnlocksCount();
+        const extraFees1AllocationAfter = await contract.extraFees1Allocation();
+        const extraFees1AllocationUncollectableAfter = await contract.extraFees1AllocationUncollectable();
         expect(contractBalanceAfter).to.equal(contractBalanceBefore);
 
         expect(userInfoBefore.allocation).to.equal(userInfoAfter.allocation);
-        expect(userInfoAfter.feePercentageCurrentUnlock).to.equal(userInfoBefore.feePercentageCurrentUnlock);
-        expect(userInfoAfter.feePercentageNextUnlock).to.equal(1e6);
-        expect(userInfoAfter.totalClaimed).to.equal(userInfoBefore.totalClaimed);
+        expect(userInfoBefore.claimedUnlocksCount).to.equal(userInfoAfter.claimedUnlocksCount);
+        expect(userInfoAfter.eliminatedAfterUnlock).to.equal(passedUnlocksCount);
+        expect(extraFees1AllocationAfter.sub(extraFees1AllocationBefore)).to.closeTo(expectedExtraFee1Allocation, PRECISION_LOSS);
+        expect(extraFees1AllocationUncollectableAfter.sub(extraFees1AllocationUncollectableBefore)).to.closeTo(expectedExtraFee1AllocationUncollectable, PRECISION_LOSS);
     }
 
     before(async () => {
@@ -226,17 +267,13 @@ describe("SHO smart contract", function() {
             await expect(contract.claimUser2(0)).to.be.revertedWith("SHO: no unlocks passed");
             await time.increase(100);
 
-            /*contract = contract.connect(owner);
-            await expect(contract.eliminateOption1Users([user1.address])).to.be.revertedWith("SHO: no unlocks passed");
-
-            await time.increase(100);
+            contract = contract.connect(feeCollector);
+            await expect(contract.claimUser2(0)).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
 
             contract = contract.connect(user1);
-            await expect(contract.eliminateOption1Users([user2.address])).to.be.revertedWith("Ownable: caller is not the owner");
-
-            contract = contract.connect(owner);
-            await expect(contract.eliminateOption1Users([user3.address])).to.be.revertedWith("SHO: some user not option 1");
-            await expect(contract.eliminateOption1Users([feeCollector.address, user2.address])).to.be.revertedWith("SHO: some user not option 1");*/
+            await expect(contract.claimUser1()).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
+            
+            await expect(contract.collectFees()).to.be.revertedWith("SHO: caller is not the fee collector");
         });
         
         it("first unlock - user 1 claims", async() => {
@@ -248,7 +285,7 @@ describe("SHO smart contract", function() {
             await claim2(user1, true, 100);
         });
 
-        it("first unlock - user 1 claims", async() => {
+        it("first unlock - user 2 claims", async() => {
             await claim2(user2, false, 245, false, 350, 105, 350, 245);
         });
 
@@ -263,7 +300,10 @@ describe("SHO smart contract", function() {
             await collectFees(true);
         });
 
-        it("second unlock - user 2 has nothing to claim", async() => {
+        it("second unlock - user 2 and 1 has nothing to claim", async() => {
+            await claim2(user1, true);
+            await claim2(user1, true, 100, true);
+
             await claim2(user2, true);
             await claim2(user2, true, 100, true);
         });
@@ -275,6 +315,7 @@ describe("SHO smart contract", function() {
 
         it("third unlock - user 1 claims", async() => {
             await time.increase(2592000);
+
             await claim2(user1, false, 1, true);
             await claim2(user1, false, 0, false, 105, 105, 105, 0);
             await claim2(user1, true);
@@ -358,6 +399,208 @@ describe("SHO smart contract", function() {
         it("second unlock - collecting fees", async() => {
             await collectFees(false, 300, 0);
             await collectFees(true);
+        });
+    });
+
+    describe("Full flow test (option 1 users)", async() => {
+        before(async() => {
+            await init(
+                [500000, 300000, 200000],
+                [100, 2592000, 2592000],
+                300000,
+                {
+                    wallets: [user1.address, user2.address, user3.address],
+                    allocations: [1000, 1000, 2000],
+                    options: [1, 1, 1]
+                }
+            );
+        });
+
+        it("check reverts", async() => {
+            contract = contract.connect(user1);
+            await expect(contract.claimUser1()).to.be.revertedWith("SHO: no unlocks passed");
+
+            contract = contract.connect(owner);
+            await expect(contract.eliminateUsers1([user1.address])).to.be.revertedWith("SHO: no unlocks passed");
+
+            await time.increase(100);
+
+            contract = contract.connect(user1);
+            await expect(contract.eliminateUsers1([user2.address])).to.be.revertedWith("Ownable: caller is not the owner");
+
+            contract = contract.connect(owner);
+            await expect(contract.eliminateUsers1([feeCollector.address, user2.address])).to.be.revertedWith("SHO: some user not option 1");
+        });
+
+        it("first unlock - user 1 claims", async() => {
+            await claim1(user1, false, 350);
+            await claim1(user1, true);
+        });
+
+        it("first unlock - user 1 is eliminated", async() => {
+            await eliminate(user1, false, 700, 350);
+            await eliminate(user1, true);
+        });
+
+        it("first unlock - collecting fees", async() => {
+            await collectFees(false, 600, 0);
+        });
+
+        it("first unlock - user 2 is eliminated", async() => {
+            await eliminate(user2, false, 700, 350);
+            await eliminate(user2, true);
+        });
+
+        it("first unlock - user 2 claims", async() => {
+            await claim1(user2, false, 350);
+            await claim1(user2, true);
+        });
+
+        it("second unlock - user 1 and 2 have nothing to claim", async() => {
+            await time.increase(2592000);
+            await claim1(user1, true);
+            await claim1(user2, true);
+            await eliminate(user1, true);
+            await eliminate(user2, true);
+        });
+
+        it("second unlock - user 3 claims", async() => {
+            await claim1(user3, false, 1120);
+            await claim1(user3, true);
+        });
+
+        it("third unlock - collecting fees", async() => {
+            await time.increase(2592000);
+            await collectFees(false, 600, 700);
+            await collectFees(true);
+        });
+        
+        it("third unlock - user 3 cant be eliminated", async() => {
+            contract = contract.connect(owner);
+            await expect(contract.eliminateUsers1([user3.address])).to.be.revertedWith("SHO: eliminating in the last unlock");
+        });
+
+        it("third unlock - user 3 claims", async() => {
+            await claim1(user3, false, 280);
+            await claim1(user3, true);
+
+            const contractBalance = await shoToken.balanceOf(contract.address);
+            expect(contractBalance).to.equal(0);
+        });
+    });
+
+    describe("Full flow test 2 (option 1 users)", async() => {
+        before(async() => {
+            await init(
+                [300000, 300000, 200000, 200000],
+                [0, 2592000, 2592000, 2592000],
+                300000,
+                {
+                    wallets: [user1.address, user2.address],
+                    allocations: [1000, 1000],
+                    options: [1, 1]
+                }
+            );
+        });
+
+        it("first unlock - no activity", async() => {
+
+        });
+
+        it("second unlock - user 1 is eliminated", async() => {
+            await time.increase(2592000);
+            await eliminate(user1, false, 700, 420);
+            await eliminate(user1, true);
+        });
+
+        it("third unlock - user 1 claims", async() => {
+            await time.increase(2592000);
+            await claim1(user1, false, 420);
+            await claim1(user1, true);
+        });
+
+        it("third unlock - user 2 is eliminated", async() => {
+            await eliminate(user2, false, 700, 560);
+            await eliminate(user2, true);
+        });
+
+        it("fourth unlock - user 1 has nothing to claim", async() => {
+            await time.increase(2592000);
+            await claim1(user1, true);
+        });
+
+        it("fourth unlock - user 2 claims", async() => {
+            await claim1(user2, false, 560);
+            await claim1(user2, true);
+        });
+
+        it("fourth unlock - collecting fees", async() => {
+            await collectFees(false, 600, 420);
+            await collectFees(true);
+
+            const contractBalance = await shoToken.balanceOf(contract.address);
+            expect(contractBalance).to.equal(0);
+        });
+    });
+
+    describe("Full flow test (mixed options)", async() => {
+        before(async() => {
+            await init(
+                [500000, 300000, 200000],
+                [0, 2592000, 2592000],
+                300000,
+                {
+                    wallets: [user1.address, user2.address],
+                    allocations: [1000, 1000],
+                    options: [2, 1]
+                }
+            );
+        });
+
+        it("first unlock - user 1 claims", async() => {
+            await claim2(user1, false, 0, false, 105, 105, 350, 0);
+            await claim2(user1, true);
+            await claim2(user1, false, 100, false, 100, 0, 350, 100);
+        });
+
+        it("first unlock - user 2 claims", async() => {
+            await claim1(user2, false, 350);
+            await claim1(user2, true); 
+        });
+
+        it("second unlock - user 1 claims", async() => {
+            await time.increase(2592000);
+            await claim2(user1, false, 0, false, 108, 63, 210, 0);
+            await claim2(user1, true);
+        });
+
+        it("second unlock - user 2 is eliminated", async() => {
+            await eliminate(user2, false, 700, 560);
+            await eliminate(user2, true);
+        });
+
+        it("second unlock - collecting fees", async() => {
+            await collectFees(false, 480, 100);
+            await collectFees(true);
+        });
+
+        it("third unlock - user 2 claims", async() => {
+            await time.increase(2592000);
+            await claim1(user2, false, 210);
+            await claim1(user2, true);
+        }); 
+
+        it("third unlock - user 1 claims", async() => {
+            await claim2(user1, false, 0, false, 287, 140, 140, 0);
+            await claim2(user1, true);
+        });
+
+        it("third unlock - collecting fees", async() => {
+            await collectFees(false, 120, 140);
+            await collectFees(true);
+
+            const contractBalance = await shoToken.balanceOf(contract.address);
+            expect(contractBalance).to.equal(0);
         });
     });
 });

@@ -5,7 +5,6 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "hardhat/console.sol";
 
 contract SHO is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -32,44 +31,50 @@ contract SHO is Ownable, ReentrancyGuard {
 
     IERC20 public immutable shoToken;
     uint64 public immutable startTime;
-    uint16 public passedUnlocksCount;
-    uint32[] public unlockPercentages;
-    uint32[] public unlockPeriods;
-
-    uint120 public globalTotalAllocation1;
-    uint120 public globalTotalAllocation2;
     address public immutable feeCollector;
     uint32 public immutable baseFeePercentage;
-    uint16 public collectedUnlocksCount;
-    uint120[] public extraFees;
 
+    uint32[] public unlockPercentages;
+    uint32[] public unlockPeriods;
+    uint120[] public extraFees2;
 
-    event Whitelist(
+    uint120 public globalTotalAllocation;
+    uint16 public passedUnlocksCount;
+
+    uint16 public collectedFeesUnlocksCount;
+    uint120 public extraFees1Allocation;
+    uint120 public extraFees1AllocationUncollectable;
+
+    event Whitelist (
         address user,
         uint128 allocation,
         uint8 option
     );
 
-    event UserElimination(
-        address user,
+    event Claim1 (
+        address indexed user,
         uint16 currentUnlock,
-        uint128 unlockedTokens,
-        uint32 increasedFeePercentage
+        uint120 claimedTokens
     );
 
-    event FeeCollection(
+    event Claim2 (
+        address indexed user,
+        uint16 currentUnlock,
+        uint120 claimedTokens,
+        uint120 baseClaimed,
+        uint120 chargedfee
+    );
+
+    event FeeCollection (
         uint16 currentUnlock,
         uint128 totalFee,
         uint128 baseFee,
         uint128 extraFee
     );
 
-    event Claim2(
-        address indexed user,
-        uint16 currentUnlock,
-        uint120 claimedTokens,
-        uint120 baseClaimed,
-        uint120 chargedfee
+    event UserElimination (
+        address user,
+        uint16 currentUnlock
     );
 
     event Update (
@@ -128,7 +133,7 @@ contract SHO is Ownable, ReentrancyGuard {
         baseFeePercentage = _baseFeePercentage;
         feeCollector = _feeCollector;
         startTime = _startTime;
-        extraFees = new uint120[](_unlockPercentagesDiff.length);
+        extraFees2 = new uint120[](_unlockPercentagesDiff.length);
     }
 
     /** 
@@ -147,8 +152,7 @@ contract SHO is Ownable, ReentrancyGuard {
         require(userAddresses.length == allocations.length, "SHO: different array lengths");
         require(userAddresses.length == options.length, "SHO: different array lengths");
 
-        uint120 _globalTotalAllocation1;
-        uint120 _globalTotalAllocation2;
+        uint120 _globalTotalAllocation;
         for (uint256 i = 0; i < userAddresses.length; i++) {
             require(options[i] == 1 || options[i] == 2, "SHO: invalid user option");
 
@@ -156,13 +160,12 @@ contract SHO is Ownable, ReentrancyGuard {
                 User1 storage user = users1[userAddresses[i]];
                 require(user.allocation == 0, "SHO: some users are already whitelisted");
                 user.allocation = allocations[i];
-                _globalTotalAllocation1 += allocations[i];
             } else if (options[i] == 2) {
                 User2 storage user = users2[userAddresses[i]];
                 require(user.allocation == 0, "SHO: some users are already whitelisted");
                 user.allocation = allocations[i];
-                _globalTotalAllocation2 += allocations[i];
             }
+            _globalTotalAllocation += allocations[i];
 
             emit Whitelist(
                 userAddresses[i],
@@ -171,11 +174,74 @@ contract SHO is Ownable, ReentrancyGuard {
             );
         }
             
-        globalTotalAllocation1 = _globalTotalAllocation1;
-        globalTotalAllocation2 = _globalTotalAllocation2;
+        globalTotalAllocation = _globalTotalAllocation;
+    }
+
+    /**
+        Users type 1 claims all the available amount without increasing the fee.
+        (there's still the baseFee deducted from their allocation).
+    */
+    function claimUser1() onlyWhitelistedUser1 external nonReentrant returns (uint120 amountToClaim) {
+        update();
+        User1 memory user = users1[msg.sender];
+        require(passedUnlocksCount > 0, "SHO: no unlocks passed");
+        require(user.claimedUnlocksCount < passedUnlocksCount, "SHO: nothing to claim");
+
+        uint16 currentUnlock = passedUnlocksCount - 1;
+        if (user.eliminatedAfterUnlock > 0) {
+            require(user.claimedUnlocksCount < user.eliminatedAfterUnlock, "SHO: nothing to claim");
+            currentUnlock = user.eliminatedAfterUnlock - 1;
+        }
+
+        uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? unlockPercentages[user.claimedUnlocksCount - 1] : 0;
+        amountToClaim = user.allocation * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
+        amountToClaim = _applyBaseFee(amountToClaim);
+
+        user.claimedUnlocksCount = currentUnlock + 1;
+        users1[msg.sender] = user;
+        shoToken.safeTransfer(msg.sender, amountToClaim);
+        emit Claim1(
+            msg.sender, 
+            currentUnlock,
+            amountToClaim
+        );
+    }
+
+    /**
+        Removes all the future allocation of passed user type 1 addresses.
+        They can still claim the unlock they were eliminated in.
+        @param userAddresses whitelisted user addresses to eliminate
+     */
+    function eliminateUsers1(address[] calldata userAddresses) external onlyOwner {
+        update();
+        require(passedUnlocksCount > 0, "SHO: no unlocks passed");
+        uint16 currentUnlock = passedUnlocksCount - 1;
+        require(currentUnlock < unlockPeriods.length - 1, "SHO: eliminating in the last unlock");
+
+        for (uint256 i = 0; i < userAddresses.length; i++) {
+            address userAddress = userAddresses[i];
+            User1 memory user = users1[userAddress];
+            require(user.allocation > 0, "SHO: some user not option 1");
+            require(user.eliminatedAfterUnlock == 0, "SHO: some user already eliminated");
+
+            uint120 userAllocation = _applyBaseFee(user.allocation);
+            uint120 uncollectable = userAllocation * unlockPercentages[currentUnlock] / HUNDRED_PERCENT;
+
+            extraFees1Allocation += userAllocation;
+            extraFees1AllocationUncollectable += uncollectable;
+
+            users1[userAddress].eliminatedAfterUnlock = currentUnlock + 1;
+            emit UserElimination(
+                userAddress,
+                currentUnlock
+            );
+        }
     }
     
-
+    /**
+        User type 2 claims all the remaining amount of previous unlocks and can claim up to baseFeePercentage of the current unlock tokens without causing a fee.
+        @param extraAmountToClaim the extra amount is also equal to the charged fee (user claims 100 more the first unlock, can claim 200 less the second unlock)
+    */
     function claimUser2(
         uint120 extraAmountToClaim
     ) external nonReentrant onlyWhitelistedUser2 returns (
@@ -220,11 +286,73 @@ contract SHO is Ownable, ReentrancyGuard {
         );
     }
 
+    /**
+        It's important that the fees are collectable not depedning on if users are claiming.
+     */ 
+    function collectFees() external onlyFeeCollector nonReentrant returns (uint120 baseFee, uint120 extraFee) {
+        update();
+        require(collectedFeesUnlocksCount < passedUnlocksCount, "SHO: no fees to collect");
+        uint16 currentUnlock = passedUnlocksCount - 1;
+
+        // base fee from users type 1 and 2
+        uint32 lastUnlockPercentage = collectedFeesUnlocksCount > 0 ? unlockPercentages[collectedFeesUnlocksCount - 1] : 0;
+        uint120 globalAllocation = globalTotalAllocation * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
+        baseFee = globalAllocation * baseFeePercentage / HUNDRED_PERCENT;
+
+        // extra fees from users type 2
+        uint120 extraFee2;
+        for (uint16 i = collectedFeesUnlocksCount; i <= currentUnlock; i++) {
+            extraFee2 += extraFees2[i];
+        }
+
+        // extra fees from users type 1
+        uint120 extraFees1AllocationTillNow = extraFees1Allocation * unlockPercentages[currentUnlock] / HUNDRED_PERCENT;
+        uint120 extraFee1 = extraFees1AllocationTillNow - extraFees1AllocationUncollectable;
+        extraFees1AllocationUncollectable = extraFees1AllocationTillNow;
+
+        extraFee = extraFee1 + extraFee2;
+        uint120 totalFee = baseFee + extraFee;
+
+        collectedFeesUnlocksCount = currentUnlock + 1;
+        shoToken.safeTransfer(msg.sender, totalFee);
+        emit FeeCollection(
+            currentUnlock,
+            totalFee, 
+            baseFee, 
+            extraFee
+        );
+    }
+
+    /**  
+        Updates passedUnlocksCount.
+    */
+    function update() public {
+        require(block.timestamp >= startTime, "SHO: before startTime");
+
+        uint16 _passedUnlocksCount = _getPassedUnlockCount();
+        if (_passedUnlocksCount > passedUnlocksCount) {
+            passedUnlocksCount = _passedUnlocksCount;
+            emit Update(_passedUnlocksCount);
+        }
+    }
+
+    // PRIVATE FUNCTIONS
+
+    function _getPassedUnlockCount() private view returns (uint16 _passedUnlocksCount) {
+        uint256 timeSinceStart = block.timestamp - startTime;
+        uint256 maxReleases = unlockPeriods.length;
+        _passedUnlocksCount = passedUnlocksCount;
+
+        while (_passedUnlocksCount < maxReleases && timeSinceStart >= unlockPeriods[_passedUnlocksCount]) {
+            _passedUnlocksCount++;
+        }
+    }
+
     function _getClaimableFromPreviousUnlocks(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 1 ? unlockPercentages[user.claimedUnlocksCount - 2] : 0;
         uint32 previousUnlockPercentage = currentUnlock > 0 ? unlockPercentages[currentUnlock - 1] : 0;
         uint120 pastAllocation = user.allocation * (previousUnlockPercentage - lastUnlockPercentage) / HUNDRED_PERCENT;
-        pastAllocation -= pastAllocation * baseFeePercentage / HUNDRED_PERCENT;
+        pastAllocation = _applyBaseFee(pastAllocation);
         pastAllocation -= user.currentClaimed;
 
         if (user.debt <= pastAllocation) {
@@ -240,7 +368,7 @@ contract SHO is Ownable, ReentrancyGuard {
             unlockPercentages[currentUnlock] - unlockPercentages[currentUnlock - 1] : unlockPercentages[currentUnlock];
 
         user.currentAvailable = user.allocation * unlockPercentageDiffCurrent / HUNDRED_PERCENT;
-        user.currentAvailable -= user.currentAvailable * baseFeePercentage / HUNDRED_PERCENT;
+        user.currentAvailable = _applyBaseFee(user.currentAvailable);
 
         if (user.currentAvailable >= user.debt) {
             user.currentAvailable -= user.debt;
@@ -268,199 +396,18 @@ contract SHO is Ownable, ReentrancyGuard {
         while (fee > 0 && currentUnlock < unlockPeriods.length - 1) {
             uint16 nextUnlock = currentUnlock + 1;
             uint120 nextUserAvailable = user.allocation * (unlockPercentages[nextUnlock] - unlockPercentages[currentUnlock]) / HUNDRED_PERCENT;
-            nextUserAvailable -= nextUserAvailable * baseFeePercentage / HUNDRED_PERCENT;
+            nextUserAvailable = _applyBaseFee(nextUserAvailable);
 
             uint120 currentUnlockFee = fee <= nextUserAvailable ? fee : nextUserAvailable;
-            extraFees[nextUnlock] += currentUnlockFee;
+            extraFees2[nextUnlock] += currentUnlockFee;
             fee -= currentUnlockFee;
             currentUnlock++;
         }
     }
-    
-    /**
-        It's important that the fees are collectable not depedning on if users are claiming.
-     */ 
-    function collectFees() external onlyFeeCollector nonReentrant returns (uint128 baseFee, uint128 extraFee) {
-        update();
-        require(collectedUnlocksCount < passedUnlocksCount, "SHO: no fees to collect");
-        uint16 currentUnlock = passedUnlocksCount - 1;
 
-        uint32 lastUnlockPercentage = collectedUnlocksCount > 0 ? unlockPercentages[collectedUnlocksCount - 1] : 0;
-        uint128 globalAllocation2 = globalTotalAllocation2 * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
-        baseFee = globalAllocation2 * baseFeePercentage / HUNDRED_PERCENT;
-
-        for (uint16 i = collectedUnlocksCount; i <= currentUnlock; i++) {
-            extraFee += extraFees[i];
-        }
-
-        uint128 totalFee = baseFee + extraFee;
-
-        collectedUnlocksCount = currentUnlock + 1;
-        shoToken.safeTransfer(msg.sender, totalFee);
-        emit FeeCollection(
-            currentUnlock,
-            totalFee, 
-            baseFee, 
-            extraFee
-        );
+    function _applyBaseFee(uint120 value) private view returns (uint120) {
+        return value - value * baseFeePercentage / HUNDRED_PERCENT;
     }
-
-    /**  
-        Updates passedUnlocksCount.
-    */
-    function update() public {
-        require(block.timestamp >= startTime, "SHO: before startTime");
-
-        uint256 timeSinceStart = block.timestamp - startTime;
-        uint256 maxReleases = unlockPeriods.length;
-        uint16 _passedUnlocksCount = passedUnlocksCount;
-
-        while (_passedUnlocksCount < maxReleases && timeSinceStart >= unlockPeriods[_passedUnlocksCount]) {
-            _passedUnlocksCount++;
-        }
-
-        passedUnlocksCount = _passedUnlocksCount;
-
-        emit Update(_passedUnlocksCount);
-    }
-
-
-    /*function Claim1() onlyWhitelistedUser1 external nonReentrant {
-        update();
-        User1 memory user = users1[msg.sender];
-        require(passedUnlocksCount > 0, "SHO: no unlocks passed");
-        uint32 currentUnlock = passedUnlocksCount - 1;
-    }*/
-
-    /**
-        Increases an option 1 user's next unlock fee to 100%.
-        @param userAddresses whitelisted user addresses to eliminate
-     */
-    /*function eliminateOption1Users(address[] calldata userAddresses) external onlyOwner {
-        update();
-        require(passedUnlocksCount > 0, "SHO: no unlocks passed");
-        uint32 currentUnlock = passedUnlocksCount - 1;
-        require(currentUnlock < unlockPeriods.length - 1, "SHO: eliminating in the last unlock");
-
-        for (uint256 i = 0; i < userAddresses.length; i++) {
-            address userAddress = userAddresses[i];
-            User memory user = users[userAddress];
-            require(user.option == 1, "SHO: some user not option 1");
-            require(user.feePercentageNextUnlock < HUNDRED_PERCENT, "SHO: some user already eliminated");
-
-            uint128 unlockedTokens = _unlockUserTokens(user);
-            uint32 increasedFeePercentage = _updateUserFee(user, HUNDRED_PERCENT);
-
-            users[userAddress] = user;
-            emit UserElimination(
-                userAddress,
-                currentUnlock,
-                unlockedTokens,
-                increasedFeePercentage
-            );
-        }
-    }*/
-
-    /**
-        It's important that the fees are collectable not depedning on if users are claiming, 
-        otherwise the fees could be collected when users claim.
-     */ 
-    /*function collectFees() external onlyFeeCollector nonReentrant returns (uint128 baseFee, uint128 extraFee) {
-        update();
-        require(collectedUnlocksCount < passedUnlocksCount, "SHO: no fees to collect");
-        uint32 currentUnlock = passedUnlocksCount - 1;
-
-        uint32 lastUnlockPercentage = collectedUnlocksCount > 0 ? unlockPercentages[collectedUnlocksCount - 1] : 0;
-        uint128 lastExtraFee = collectedUnlocksCount > 0 ? extraFees[collectedUnlocksCount - 1] : 0;
-
-        uint128 globalAllocation = globalTotalAllocation * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
-        baseFee = globalAllocation * baseFeePercentage / HUNDRED_PERCENT;
-        extraFee = extraFees[currentUnlock] - lastExtraFee;
-        uint128 totalFee = baseFee + extraFee;
-
-        collectedUnlocksCount = currentUnlock + 1;
-        shoToken.safeTransfer(msg.sender, totalFee);
-        emit FeeCollection(
-            currentUnlock,
-            totalFee, 
-            baseFee, 
-            extraFee
-        );
-    }*/
-
-    /*
-        Users can choose how much they want to claim and depending on that (ratio totalClaimed / totalUnlocked), 
-        their fee for the next unlocks increases or not.
-        @param amountToClaim needs to be less or equal to the available amount
-     */
-    /*function claim(
-        uint128 amountToClaim
-    ) external onlyWhitelisted nonReentrant returns (
-        uint128 unlockedTokens,
-        uint32 increasedFeePercentage,
-        uint128 availableToClaim, 
-        uint128 receivedTokens
-    ) {
-        update();
-        User memory user = users[msg.sender];
-        require(passedUnlocksCount > 0, "SHO: no unlocks passed");
-        require(amountToClaim <= user.allocation, "SHO: amount to claim higher than allocation");
-        uint32 currentUnlock = passedUnlocksCount - 1;
-
-        unlockedTokens = _unlockUserTokens(user);
-
-        availableToClaim = user.totalUnlocked - user.totalClaimed;
-        require(availableToClaim > 0, "SHO: no tokens to claim");
-        
-        receivedTokens = amountToClaim > availableToClaim ? availableToClaim : amountToClaim;
-        user.totalClaimed += receivedTokens;
-
-        if (user.option == 0) {
-            uint32 claimedRatio = uint32(user.totalClaimed * HUNDRED_PERCENT / user.totalUnlocked);
-            increasedFeePercentage = _updateUserFee(user, claimedRatio);
-        }
-        
-        users[msg.sender] = user;
-        shoToken.safeTransfer(msg.sender, receivedTokens);
-        emit Claim(
-            msg.sender, 
-            currentUnlock, 
-            unlockedTokens,
-            increasedFeePercentage,
-            receivedTokens
-        );
-    }*/
-
-    
-
-    /*function _updateUserFee(User memory user, uint32 potentiallyNextFeePercentage) private returns (uint32 increasedFeePercentage) {
-        uint32 currentUnlock = passedUnlocksCount - 1;
-
-        if (currentUnlock < unlockPeriods.length - 1) {
-            if (potentiallyNextFeePercentage > user.feePercentageNextUnlock) {
-                increasedFeePercentage = potentiallyNextFeePercentage - user.feePercentageNextUnlock;
-                user.feePercentageNextUnlock = potentiallyNextFeePercentage;
-
-                uint128 tokensNextUnlock = user.allocation * (unlockPercentages[currentUnlock + 1] - unlockPercentages[currentUnlock]) / HUNDRED_PERCENT;
-                uint128 extraFee = tokensNextUnlock * increasedFeePercentage / HUNDRED_PERCENT;
-                extraFees[currentUnlock + 1] += extraFee;
-            }
-        }
-    }*/
-
-    /*function _unlockUserTokens(User memory user) private view returns (uint128 unlockedTokens) {
-        uint32 currentUnlock = passedUnlocksCount - 1;
-
-        if (user.unlockedBatchesCount <= currentUnlock) {
-            user.feePercentageCurrentUnlock = user.feePercentageNextUnlock;
-
-            uint32 lastUnlockPercentage = user.unlockedBatchesCount > 0 ? unlockPercentages[user.unlockedBatchesCount - 1] : 0;
-            unlockedTokens = user.allocation * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
-            unlockedTokens -= unlockedTokens * user.feePercentageCurrentUnlock / HUNDRED_PERCENT;
-            user.totalUnlocked += unlockedTokens;
-            user.unlockedBatchesCount = currentUnlock + 1;
-        }
-    }*/
 
     function _buildArraySum(uint32[] memory diffArray) internal pure returns (uint32[] memory) {
         uint256 len = diffArray.length;
