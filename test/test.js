@@ -137,7 +137,7 @@ describe("SHO smart contract", function() {
         const feeCollectorBalanceAfter = await shoToken.balanceOf(feeCollector.address);
         const contractBalanceAfter = await shoToken.balanceOf(contract.address);
         const burnValleyBalanceAfter = await shoToken.balanceOf(burnValley.address);
-        
+
         expect(contractBalanceAfter).to.equal(contractBalanceBefore.sub(result.baseFee).sub(result.extraFee))
         expect(feeCollectorBalanceAfter).to.equal(feeCollectorBalanceBefore.add(result.baseFee).add(result.extraFee).sub(result.burned));
 
@@ -314,6 +314,13 @@ describe("SHO smart contract", function() {
             await expect(contract.claimUser1()).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
             
             await expect(contract.collectFees()).to.be.revertedWith("SHO: caller is not the fee collector");
+        });
+
+        it("check private non-view functions", async() => {
+            expect(contract["burn"]).to.equal(undefined);
+            expect(contract["chargeFee"]).to.equal(undefined);
+            expect(contract["_burn"]).to.equal(undefined);
+            expect(contract["_chargeFee"]).to.equal(undefined);
         });
         
         it("first unlock - user 1 claims", async() => {
