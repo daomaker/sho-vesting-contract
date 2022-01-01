@@ -42,38 +42,41 @@ describe("SHO smart contract", function() {
         expect(await contract.globalTotalAllocation()).to.equal(parseUnits(globalTotalAllocation));
     }
 
-    const testConstructorRequireStatements = async(unlockPercentages, unlockPeriods, baseFee, startTime, burnValley, burnPercentage) => {
+    const testConstructorRequireStatements = async(unlockPercentages, unlockPeriods, baseFee, startTime, burnValley, burnPercentage, freeClaimablePercentage) => {
         const Contract = await ethers.getContractFactory("SHO");
 
-        await expect(Contract.deploy(ethers.constants.AddressZero, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(ethers.constants.AddressZero, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: sho token zero address");
 
-        await expect(Contract.deploy(shoToken.address, [], unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, [], unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: 0 unlock percentages");
 
         const unlockPercentagesMany = new Array(201).fill(0);
-        await expect(Contract.deploy(shoToken.address, unlockPercentagesMany, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentagesMany, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: too many unlock percentages");  
 
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods.concat(1000), baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods.concat(1000), baseFee, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: different array lengths"); 
             
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, 1e6 + 1, feeCollector.address, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, 1e6 + 1, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: initial fee percentage higher than 100%"); 
         
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, ethers.constants.AddressZero, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, ethers.constants.AddressZero, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: fee collector zero address"); 
 
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, 10000000, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, 10000000, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: start time must be in future"); 
 
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, ethers.constants.AddressZero, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, ethers.constants.AddressZero, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: burn valley zero address"); 
 
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, 1000001))
-            .to.be.revertedWith("SHO: burn percentage too high"); 
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, 1000001, freeClaimablePercentage))
+            .to.be.revertedWith("SHO: burn percentage higher than 100%"); 
 
-        await expect(Contract.deploy(shoToken.address, [100000, 100000], [1, 1], baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage, 1000001))
+            .to.be.revertedWith("SHO: free claimable percentage higher than 100%"); 
+
+        await expect(Contract.deploy(shoToken.address, [100000, 100000], [1, 1], baseFee, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: invalid unlock percentages"); 
     }
 
@@ -84,11 +87,12 @@ describe("SHO smart contract", function() {
         const ERC20Mock = await ethers.getContractFactory(shoTokenBurnable ? "ERC20MockBurnable" : "ERC20Mock");
         shoToken = await ERC20Mock.deploy("MOCK1", "MOCK1", owner.address, parseUnits(100000000), shoTokenDecimals);
 
+        const freeClaimablePercentage = baseFee;
         const BurnValley = await ethers.getContractFactory("BurnValley");
         burnValley = await BurnValley.deploy();
         const burnPercentage = 300000;
 
-        await testConstructorRequireStatements(unlockPercentages, unlockPeriods, baseFee, startTime, burnValley.address, burnPercentage);
+        await testConstructorRequireStatements(unlockPercentages, unlockPeriods, baseFee, startTime, burnValley.address, burnPercentage, freeClaimablePercentage);
 
         const Contract = await ethers.getContractFactory("SHO");
         contract = await Contract.deploy(
@@ -99,7 +103,8 @@ describe("SHO smart contract", function() {
             feeCollector.address,
             startTime,
             burnValley.address,
-            burnPercentage
+            burnPercentage,
+            freeClaimablePercentage
         );
 
         expect(await contract.shoToken()).to.equal(shoToken.address);

@@ -36,6 +36,7 @@ contract SHO is Ownable, ReentrancyGuard {
     uint64 public immutable startTime;
     address public immutable feeCollector;
     uint32 public immutable baseFeePercentage;
+    uint32 public immutable freeClaimablePercentage;
     address public immutable burnValley;
     uint32 public immutable burnPercentage;
 
@@ -112,6 +113,7 @@ contract SHO is Ownable, ReentrancyGuard {
         @param _startTime when users can start claiming
         @param _burnValley burned tokens are sent to this address if the SHO token is not burnable
         @param _burnPercentage burn percentage of extra fees
+        @param _freeClaimablePercentage how much can users of type 2 claim in the current unlock without a fee
      */
     constructor(
         IERC20 _shoToken,
@@ -121,7 +123,8 @@ contract SHO is Ownable, ReentrancyGuard {
         address _feeCollector,
         uint64 _startTime,
         address _burnValley,
-        uint32 _burnPercentage
+        uint32 _burnPercentage,
+        uint32 _freeClaimablePercentage
     ) {
         require(address(_shoToken) != address(0), "SHO: sho token zero address");
         require(_unlockPercentagesDiff.length > 0, "SHO: 0 unlock percentages");
@@ -131,7 +134,8 @@ contract SHO is Ownable, ReentrancyGuard {
         require(_feeCollector != address(0), "SHO: fee collector zero address");
         require(_startTime > block.timestamp, "SHO: start time must be in future");
         require(_burnValley != address(0), "SHO: burn valley zero address");
-        require(_burnPercentage <= HUNDRED_PERCENT, "SHO: burn percentage too high");
+        require(_burnPercentage <= HUNDRED_PERCENT, "SHO: burn percentage higher than 100%");
+        require(_freeClaimablePercentage <= HUNDRED_PERCENT, "SHO: free claimable percentage higher than 100%");
 
         // build arrays of sums for easier calculations
         uint32[] memory _unlockPercentages = _buildArraySum(_unlockPercentagesDiff);
@@ -146,6 +150,7 @@ contract SHO is Ownable, ReentrancyGuard {
         startTime = _startTime;
         burnValley = _burnValley;
         burnPercentage = _burnPercentage;
+        freeClaimablePercentage = _freeClaimablePercentage;
         extraFees2 = new uint120[](_unlockPercentagesDiff.length);
     }
 
@@ -424,7 +429,7 @@ contract SHO is Ownable, ReentrancyGuard {
 
     function _getCurrentBaseClaimAmount(User2 memory user, uint16 currentUnlock) private view returns (uint120 baseClaimAmount) {
         if (currentUnlock < unlockPeriods.length - 1) {
-            baseClaimAmount = user.currentUnlocked * baseFeePercentage / HUNDRED_PERCENT;
+            baseClaimAmount = user.currentUnlocked * freeClaimablePercentage / HUNDRED_PERCENT;
         } else {
             baseClaimAmount = user.currentUnlocked;
         }
