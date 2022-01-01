@@ -23,7 +23,9 @@ describe("SHO smart contract", function() {
 
         contract = contract.connect(owner); 
         await contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options);
-        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options))
+        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 1)))
+            .to.be.revertedWith("SHO: some users are already whitelisted");
+        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 2)))
             .to.be.revertedWith("SHO: some users are already whitelisted");
 
 

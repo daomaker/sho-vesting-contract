@@ -172,16 +172,15 @@ contract SHO is Ownable, ReentrancyGuard {
 
         uint120 _globalTotalAllocation;
         for (uint256 i = 0; i < userAddresses.length; i++) {
+            address userAddress = userAddresses[i];
             require(options[i] == 1 || options[i] == 2, "SHO: invalid user option");
+            require(users1[userAddress].allocation == 0, "SHO: some users are already whitelisted");
+            require(users2[userAddress].allocation == 0, "SHO: some users are already whitelisted");
 
             if (options[i] == 1) {
-                User1 storage user = users1[userAddresses[i]];
-                require(user.allocation == 0, "SHO: some users are already whitelisted");
-                user.allocation = allocations[i];
+                users1[userAddress].allocation = allocations[i];
             } else if (options[i] == 2) {
-                User2 storage user = users2[userAddresses[i]];
-                require(user.allocation == 0, "SHO: some users are already whitelisted");
-                user.allocation = allocations[i];
+                users2[userAddress].allocation = allocations[i];
             }
             _globalTotalAllocation += allocations[i];
 
