@@ -22,8 +22,11 @@ contract SHO is Ownable, ReentrancyGuard {
         uint120 debt;
 
         uint16 claimedUnlocksCount;
-        uint120 currentAvailable;
+        uint120 currentUnlocked;
         uint120 currentClaimed;
+
+        uint120 totalUnlocked;
+        uint120 totalClaimed;
     }
 
     mapping(address => User1) public users1;
@@ -68,7 +71,6 @@ contract SHO is Ownable, ReentrancyGuard {
     event FeeCollection (
         uint16 currentUnlock,
         uint128 totalFee,
-        uint128 baseFee,
         uint128 extraFee
     );
 
@@ -247,7 +249,7 @@ contract SHO is Ownable, ReentrancyGuard {
     ) external nonReentrant onlyWhitelistedUser2 returns (
         uint120 amountToClaim, 
         uint120 baseClaimAmount, 
-        uint120 availableAmount
+        uint120 currentUnlocked
     ) {
         update();
         User2 memory user = users2[msg.sender];
@@ -255,8 +257,7 @@ contract SHO is Ownable, ReentrancyGuard {
         uint16 currentUnlock = passedUnlocksCount - 1;
 
         if (user.claimedUnlocksCount < passedUnlocksCount) {
-            amountToClaim = _getClaimableFromPreviousUnlocks(user, currentUnlock);
-            _updateUser(user, currentUnlock);
+            amountToClaim = _updateUserCurrent(user, currentUnlock);
             baseClaimAmount = _getCurrentBaseClaimAmount(user, currentUnlock);
             amountToClaim += baseClaimAmount;
             user.currentClaimed += baseClaimAmount;
@@ -264,10 +265,10 @@ contract SHO is Ownable, ReentrancyGuard {
             require(extraAmountToClaim > 0, "SHO: nothing to claim");
         }
 
-        availableAmount = user.currentAvailable;
+        currentUnlocked = user.currentUnlocked;
 
         if (extraAmountToClaim > 0) {
-            require(extraAmountToClaim <= user.currentAvailable - user.currentClaimed, "SHO: passed extra amount too high");
+            require(extraAmountToClaim <= user.currentUnlocked - user.currentClaimed, "SHO: passed extra amount too high");
             amountToClaim += extraAmountToClaim;
             user.currentClaimed += extraAmountToClaim;
             _chargeFee(user, extraAmountToClaim, currentUnlock);
@@ -275,11 +276,12 @@ contract SHO is Ownable, ReentrancyGuard {
 
         require(amountToClaim > 0, "SHO: nothing to claim");
 
+        user.totalClaimed += amountToClaim;
         users2[msg.sender] = user;
         shoToken.safeTransfer(msg.sender, amountToClaim);
         emit Claim2(
             msg.sender, 
-            currentUnlock, 
+            currentUnlock,
             amountToClaim,
             baseClaimAmount,
             extraAmountToClaim
@@ -317,8 +319,7 @@ contract SHO is Ownable, ReentrancyGuard {
         shoToken.safeTransfer(msg.sender, totalFee);
         emit FeeCollection(
             currentUnlock,
-            totalFee, 
-            baseFee, 
+            totalFee,
             extraFee
         );
     }
@@ -349,45 +350,61 @@ contract SHO is Ownable, ReentrancyGuard {
 
     // PRIVATE FUNCTIONS
 
-    function _getClaimableFromPreviousUnlocks(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
-        uint32 lastUnlockPercentage = user.claimedUnlocksCount > 1 ? unlockPercentages[user.claimedUnlocksCount - 2] : 0;
-        uint32 previousUnlockPercentage = currentUnlock > 0 ? unlockPercentages[currentUnlock - 1] : 0;
-        uint120 pastAllocation = user.allocation * (previousUnlockPercentage - lastUnlockPercentage) / HUNDRED_PERCENT;
-        pastAllocation = _applyBaseFee(pastAllocation);
-        pastAllocation -= user.currentClaimed;
+    function _updateUserCurrent(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
+        claimableFromPreviousUnlocks = _getClaimableFromPreviousUnlocks(user, currentUnlock);
 
-        if (user.debt <= pastAllocation) {
-            claimableFromPreviousUnlocks = pastAllocation - user.debt;
-            user.debt = 0;
-        } else {
-            user.debt -= pastAllocation;
-        }
-    }
+        uint120 newUnlocked = claimableFromPreviousUnlocks - (user.currentUnlocked - user.currentClaimed);
 
-    function _updateUser(User2 memory user, uint16 currentUnlock) private view {
         uint32 unlockPercentageDiffCurrent = currentUnlock > 0 ?
             unlockPercentages[currentUnlock] - unlockPercentages[currentUnlock - 1] : unlockPercentages[currentUnlock];
 
-        user.currentAvailable = user.allocation * unlockPercentageDiffCurrent / HUNDRED_PERCENT;
-        user.currentAvailable = _applyBaseFee(user.currentAvailable);
+        uint120 currentUnlocked = user.allocation * unlockPercentageDiffCurrent / HUNDRED_PERCENT;
+        currentUnlocked = _applyBaseFee(currentUnlocked);
 
-        if (user.currentAvailable >= user.debt) {
-            user.currentAvailable -= user.debt;
+        newUnlocked += currentUnlocked;
+        if (newUnlocked >= user.debt) {
+            newUnlocked -= user.debt;
+        } else {
+            newUnlocked = 0;
+        }
+
+        if (claimableFromPreviousUnlocks >= user.debt) {
+            claimableFromPreviousUnlocks -= user.debt;
             user.debt = 0;
         } else {
-            user.debt -= user.currentAvailable;
-            user.currentAvailable = 0;
+            user.debt -= claimableFromPreviousUnlocks;
+            claimableFromPreviousUnlocks = 0;
+        }
+
+        if (currentUnlocked >= user.debt) {
+            currentUnlocked -= user.debt;
+            user.debt = 0;
+        } else {
+            user.debt -= currentUnlocked;
+            currentUnlocked = 0;
         }
         
+        user.totalUnlocked += newUnlocked;
+        user.currentUnlocked = currentUnlocked;
         user.currentClaimed = 0;
         user.claimedUnlocksCount = passedUnlocksCount;
     }
 
+    function _getClaimableFromPreviousUnlocks(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
+        uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? unlockPercentages[user.claimedUnlocksCount - 1] : 0;
+        uint32 previousUnlockPercentage = currentUnlock > 0 ? unlockPercentages[currentUnlock - 1] : 0;
+        uint120 claimableFromMissedUnlocks = user.allocation * (previousUnlockPercentage - lastUnlockPercentage) / HUNDRED_PERCENT;
+        claimableFromMissedUnlocks = _applyBaseFee(claimableFromMissedUnlocks);
+        
+        claimableFromPreviousUnlocks = user.currentUnlocked - user.currentClaimed;
+        claimableFromPreviousUnlocks += claimableFromMissedUnlocks;
+    }
+
     function _getCurrentBaseClaimAmount(User2 memory user, uint16 currentUnlock) private view returns (uint120 baseClaimAmount) {
         if (currentUnlock < unlockPeriods.length - 1) {
-            baseClaimAmount = user.currentAvailable * baseFeePercentage / HUNDRED_PERCENT;
+            baseClaimAmount = user.currentUnlocked * baseFeePercentage / HUNDRED_PERCENT;
         } else {
-            baseClaimAmount = user.currentAvailable;
+            baseClaimAmount = user.currentUnlocked;
         }
     }
 
