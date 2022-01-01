@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO smart contract", function() {
-    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals;
+    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, burnValley;
 
     const PRECISION_LOSS = "10000000000000000";
     
@@ -42,42 +42,53 @@ describe("SHO smart contract", function() {
         expect(await contract.globalTotalAllocation()).to.equal(parseUnits(globalTotalAllocation));
     }
 
-    const testConstructorRequireStatements = async(unlockPercentages, unlockPeriods, baseFee, startTime) => {
+    const testConstructorRequireStatements = async(unlockPercentages, unlockPeriods, baseFee, startTime, burnValley, burnPercentage) => {
         const Contract = await ethers.getContractFactory("SHO");
 
-        await expect(Contract.deploy(ethers.constants.AddressZero, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime))
+        await expect(Contract.deploy(ethers.constants.AddressZero, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: sho token zero address");
 
-        await expect(Contract.deploy(shoToken.address, [], unlockPeriods, baseFee, feeCollector.address, startTime))
+        await expect(Contract.deploy(shoToken.address, [], unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: 0 unlock percentages");
 
         const unlockPercentagesMany = new Array(201).fill(0);
-        await expect(Contract.deploy(shoToken.address, unlockPercentagesMany, unlockPeriods, baseFee, feeCollector.address, startTime))
+        await expect(Contract.deploy(shoToken.address, unlockPercentagesMany, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: too many unlock percentages");  
 
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods.concat(1000), baseFee, feeCollector.address, startTime))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods.concat(1000), baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: different array lengths"); 
             
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, 1e6 + 1, feeCollector.address, startTime))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, 1e6 + 1, feeCollector.address, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: initial fee percentage higher than 100%"); 
         
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, ethers.constants.AddressZero, startTime))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, ethers.constants.AddressZero, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: fee collector zero address"); 
 
-        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, 10000000))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, 10000000, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: start time must be in future"); 
 
-        await expect(Contract.deploy(shoToken.address, [100000, 100000], [1, 1], baseFee, feeCollector.address, startTime))
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, ethers.constants.AddressZero, burnPercentage))
+            .to.be.revertedWith("SHO: burn valley zero address"); 
+
+        await expect(Contract.deploy(shoToken.address, unlockPercentages, unlockPeriods, baseFee, feeCollector.address, startTime, burnValley, 1000001))
+            .to.be.revertedWith("SHO: burn percentage too high"); 
+
+        await expect(Contract.deploy(shoToken.address, [100000, 100000], [1, 1], baseFee, feeCollector.address, startTime, burnValley, burnPercentage))
             .to.be.revertedWith("SHO: invalid unlock percentages"); 
     }
 
-    const init = async(unlockPercentages, unlockPeriods, baseFee, whitelist, _shoTokenDecimals = 18) => {
-        const startTime = Number(await time.latest()) + 300;
-        const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
+    const init = async(unlockPercentages, unlockPeriods, baseFee, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false) => {
         shoTokenDecimals = _shoTokenDecimals;
+        shoTokenBurnable = _shoTokenBurnable;
+        const startTime = Number(await time.latest()) + 300;
+        const ERC20Mock = await ethers.getContractFactory(shoTokenBurnable ? "ERC20MockBurnable" : "ERC20Mock");
         shoToken = await ERC20Mock.deploy("MOCK1", "MOCK1", owner.address, parseUnits(100000000), shoTokenDecimals);
 
-        await testConstructorRequireStatements(unlockPercentages, unlockPeriods, baseFee, startTime);
+        const BurnValley = await ethers.getContractFactory("BurnValley");
+        burnValley = await BurnValley.deploy();
+        const burnPercentage = 300000;
+
+        await testConstructorRequireStatements(unlockPercentages, unlockPeriods, baseFee, startTime, burnValley.address, burnPercentage);
 
         const Contract = await ethers.getContractFactory("SHO");
         contract = await Contract.deploy(
@@ -86,7 +97,9 @@ describe("SHO smart contract", function() {
             unlockPeriods,
             baseFee,
             feeCollector.address,
-            startTime
+            startTime,
+            burnValley.address,
+            burnPercentage
         );
 
         expect(await contract.shoToken()).to.equal(shoToken.address);
@@ -101,7 +114,7 @@ describe("SHO smart contract", function() {
         await time.increaseTo(startTime);
     }
 
-    const collectFees = async(collectedAll, expectedBaseFee, expectedExtraFee) => {
+    const collectFees = async(collectedAll, expectedBaseFee, expectedExtraFee, expectedBurned) => {
         contract = contract.connect(feeCollector);
         if (collectedAll) {
             await expect(contract.collectFees()).to.be.revertedWith("SHO: no fees to collect");
@@ -110,15 +123,29 @@ describe("SHO smart contract", function() {
 
         expectedBaseFee = parseUnits(expectedBaseFee);
         expectedExtraFee = parseUnits(expectedExtraFee);
+        expectedBurned = parseUnits(expectedBurned);
 
         const result = await contract.callStatic.collectFees();
         expect(result.baseFee).to.closeTo(expectedBaseFee, PRECISION_LOSS);
         expect(result.extraFee).to.closeTo(expectedExtraFee, PRECISION_LOSS);
+        expect(result.burned).to.closeTo(expectedBurned, PRECISION_LOSS);
 
-        const collectorBalanceBefore = await shoToken.balanceOf(feeCollector.address);
+        const feeCollectorBalanceBefore = await shoToken.balanceOf(feeCollector.address);
+        const contractBalanceBefore = await shoToken.balanceOf(contract.address);
+        const burnValleyBalanceBefore = await shoToken.balanceOf(burnValley.address);
         await contract.collectFees();
-        const collectorBalanceAfter = await shoToken.balanceOf(feeCollector.address);
-        expect(collectorBalanceAfter).to.equal(collectorBalanceBefore.add(result.baseFee).add(result.extraFee));
+        const feeCollectorBalanceAfter = await shoToken.balanceOf(feeCollector.address);
+        const contractBalanceAfter = await shoToken.balanceOf(contract.address);
+        const burnValleyBalanceAfter = await shoToken.balanceOf(burnValley.address);
+        
+        expect(contractBalanceAfter).to.equal(contractBalanceBefore.sub(result.baseFee).sub(result.extraFee))
+        expect(feeCollectorBalanceAfter).to.equal(feeCollectorBalanceBefore.add(result.baseFee).add(result.extraFee).sub(result.burned));
+
+        if (!shoTokenBurnable) {
+            expect(burnValleyBalanceAfter).to.equal(burnValleyBalanceBefore.add(result.burned));
+        } else {
+            expect(burnValleyBalanceAfter).to.equal(burnValleyBalanceBefore);
+        }
     }
 
     const claim1 = async(
@@ -270,7 +297,8 @@ describe("SHO smart contract", function() {
                     wallets: [user1.address, user2.address, user3.address],
                     allocations: [1000, 1000, 2000],
                     options: [2, 2, 2]
-                }
+                },
+                18, true
             );
         });
 
@@ -308,13 +336,13 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - collecting fees", async() => {
-            await collectFees(false, 600, 0);
+            await collectFees(false, 600, 0, 0);
             await collectFees(true);
         });
 
         it("second unlock - collecting fees", async() => {
             await time.increase(2592000);
-            await collectFees(false, 360, 420);
+            await collectFees(false, 360, 420, 126);
             await collectFees(true);
         });
 
@@ -355,7 +383,7 @@ describe("SHO smart contract", function() {
         });
 
         it("third unlock - collecting fees", async() => {
-            await collectFees(false, 240, 70);
+            await collectFees(false, 240, 70, 21);
             await collectFees(true);
         });
 
@@ -419,7 +447,7 @@ describe("SHO smart contract", function() {
         });
 
         it("second unlock - collecting fees", async() => {
-            await collectFees(false, 1260, 300);
+            await collectFees(false, 1260, 300, 90);
             await collectFees(true);
         });
 
@@ -430,7 +458,7 @@ describe("SHO smart contract", function() {
         it("fourth unlock - collecting fees", async() => {
             await time.increase(2592000);
 
-            await collectFees(false, 540, 200);
+            await collectFees(false, 540, 200, 60);
             await collectFees(true);
         });
 
@@ -491,7 +519,7 @@ describe("SHO smart contract", function() {
         });
 
         it("second unlock - collecting fees", async() => {
-            await collectFees(false, 300, 70);
+            await collectFees(false, 300, 70, 21);
             await collectFees(true);
 
             const contractBalance = await shoToken.balanceOf(contract.address);
@@ -523,7 +551,7 @@ describe("SHO smart contract", function() {
         });
 
         it("second unlock - collecting fees", async() => {
-            await collectFees(false, 300000, 0);
+            await collectFees(false, 300000, 0, 0);
             await collectFees(true);
         });
     });
@@ -569,7 +597,7 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - collecting fees", async() => {
-            await collectFees(false, 600, 0);
+            await collectFees(false, 600, 0, 0);
         });
 
         it("first unlock - user 2 is eliminated", async() => {
@@ -597,7 +625,7 @@ describe("SHO smart contract", function() {
 
         it("third unlock - collecting fees", async() => {
             await time.increase(2592000);
-            await collectFees(false, 600, 700);
+            await collectFees(false, 600, 700, 210);
             await collectFees(true);
         });
         
@@ -661,7 +689,7 @@ describe("SHO smart contract", function() {
         });
 
         it("fourth unlock - collecting fees", async() => {
-            await collectFees(false, 600, 420);
+            await collectFees(false, 600, 420, 126);
             await collectFees(true);
 
             const contractBalance = await shoToken.balanceOf(contract.address);
@@ -711,7 +739,7 @@ describe("SHO smart contract", function() {
         });
 
         it("second unlock - collecting fees", async() => {
-            await collectFees(false, 480, 100);
+            await collectFees(false, 480, 100, 30);
             await collectFees(true);
         });
 
@@ -729,7 +757,7 @@ describe("SHO smart contract", function() {
         });
 
         it("third unlock - collecting fees", async() => {
-            await collectFees(false, 120, 140);
+            await collectFees(false, 120, 140, 42);
             await collectFees(true);
 
             const contractBalance = await shoToken.balanceOf(contract.address);

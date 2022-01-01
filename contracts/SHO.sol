@@ -36,6 +36,8 @@ contract SHO is Ownable, ReentrancyGuard {
     uint64 public immutable startTime;
     address public immutable feeCollector;
     uint32 public immutable baseFeePercentage;
+    address public immutable burnValley;
+    uint32 public immutable burnPercentage;
 
     uint32[] public unlockPercentages;
     uint32[] public unlockPeriods;
@@ -50,7 +52,7 @@ contract SHO is Ownable, ReentrancyGuard {
 
     event Whitelist (
         address user,
-        uint128 allocation,
+        uint120 allocation,
         uint8 option
     );
 
@@ -70,8 +72,9 @@ contract SHO is Ownable, ReentrancyGuard {
 
     event FeeCollection (
         uint16 currentUnlock,
-        uint128 totalFee,
-        uint128 extraFee
+        uint120 totalFee,
+        uint120 extraFee,
+        uint120 burned
     );
 
     event UserElimination (
@@ -107,6 +110,8 @@ contract SHO is Ownable, ReentrancyGuard {
         @param _baseFeePercentage base fee in percentage 
         @param _feeCollector EOA that can collect fees
         @param _startTime when users can start claiming
+        @param _burnValley burned tokens are sent to this address if the SHO token is not burnable
+        @param _burnPercentage burn percentage of extra fees
      */
     constructor(
         IERC20 _shoToken,
@@ -114,7 +119,9 @@ contract SHO is Ownable, ReentrancyGuard {
         uint32[] memory _unlockPeriodsDiff,
         uint32 _baseFeePercentage,
         address _feeCollector,
-        uint64 _startTime
+        uint64 _startTime,
+        address _burnValley,
+        uint32 _burnPercentage
     ) {
         require(address(_shoToken) != address(0), "SHO: sho token zero address");
         require(_unlockPercentagesDiff.length > 0, "SHO: 0 unlock percentages");
@@ -123,6 +130,8 @@ contract SHO is Ownable, ReentrancyGuard {
         require(_baseFeePercentage <= HUNDRED_PERCENT, "SHO: initial fee percentage higher than 100%");
         require(_feeCollector != address(0), "SHO: fee collector zero address");
         require(_startTime > block.timestamp, "SHO: start time must be in future");
+        require(_burnValley != address(0), "SHO: burn valley zero address");
+        require(_burnPercentage <= HUNDRED_PERCENT, "SHO: burn percentage too high");
 
         // build arrays of sums for easier calculations
         uint32[] memory _unlockPercentages = _buildArraySum(_unlockPercentagesDiff);
@@ -135,6 +144,8 @@ contract SHO is Ownable, ReentrancyGuard {
         baseFeePercentage = _baseFeePercentage;
         feeCollector = _feeCollector;
         startTime = _startTime;
+        burnValley = _burnValley;
+        burnPercentage = _burnPercentage;
         extraFees2 = new uint120[](_unlockPercentagesDiff.length);
     }
 
@@ -291,7 +302,7 @@ contract SHO is Ownable, ReentrancyGuard {
     /**
         It's important that the fees are collectable not depedning on if users are claiming.
      */ 
-    function collectFees() external onlyFeeCollector nonReentrant returns (uint120 baseFee, uint120 extraFee) {
+    function collectFees() external onlyFeeCollector nonReentrant returns (uint120 baseFee, uint120 extraFee, uint120 burned) {
         update();
         require(collectedFeesUnlocksCount < passedUnlocksCount, "SHO: no fees to collect");
         uint16 currentUnlock = passedUnlocksCount - 1;
@@ -314,13 +325,14 @@ contract SHO is Ownable, ReentrancyGuard {
 
         extraFee = extraFee1 + extraFee2;
         uint120 totalFee = baseFee + extraFee;
-
+        burned = _burn(extraFee);
         collectedFeesUnlocksCount = currentUnlock + 1;
-        shoToken.safeTransfer(msg.sender, totalFee);
+        shoToken.safeTransfer(msg.sender, totalFee - burned);
         emit FeeCollection(
             currentUnlock,
             totalFee,
-            extraFee
+            extraFee,
+            burned
         );
     }
 
@@ -349,6 +361,14 @@ contract SHO is Ownable, ReentrancyGuard {
     }
 
     // PRIVATE FUNCTIONS
+
+    function _burn(uint120 amount) private returns (uint120 burned) {
+        burned = amount * burnPercentage / HUNDRED_PERCENT;
+        (bool success,) = address(shoToken).call(abi.encodeWithSignature("burn(uint256)", burned));
+        if (!success) {
+            shoToken.safeTransfer(burnValley, burned);
+        }
+    }
 
     function _updateUserCurrent(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
         claimableFromPreviousUnlocks = _getClaimableFromPreviousUnlocks(user, currentUnlock);
