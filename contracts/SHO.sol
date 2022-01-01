@@ -364,6 +364,8 @@ contract SHO is Ownable, ReentrancyGuard {
 
     function _burn(uint120 amount) private returns (uint120 burned) {
         burned = amount * burnPercentage / HUNDRED_PERCENT;
+        if (burned == 0) return 0;
+
         (bool success,) = address(shoToken).call(abi.encodeWithSignature("burn(uint256)", burned));
         if (!success) {
             shoToken.safeTransfer(burnValley, burned);
