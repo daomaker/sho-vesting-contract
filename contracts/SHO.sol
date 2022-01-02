@@ -364,6 +364,10 @@ contract SHO is Ownable, ReentrancyGuard {
         }
     }
 
+    function getTotalUnlocksCount() public view returns (uint16 totalUnlocksCount) {
+        return uint16(unlockPercentages.length);
+    }
+
     // PRIVATE FUNCTIONS
 
     function _burn(uint120 amount) private returns (uint120 burned) {
