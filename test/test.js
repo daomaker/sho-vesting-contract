@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO smart contract", function() {
-    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, burnValley;
+    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, burnValley, contractView;
 
     const PRECISION_LOSS = "10000000000000000";
     
@@ -290,8 +290,35 @@ describe("SHO smart contract", function() {
         expect(extraFees1AllocationUncollectableAfter.sub(extraFees1AllocationUncollectableBefore)).to.closeTo(expectedExtraFee1AllocationUncollectable, PRECISION_LOSS);
     }
 
+    const checkUserInfo = async(
+        user,
+        expectedTotalUnlocked,
+        expectedTotalClaimed,
+        expectedUpcomingClaimable,
+        expectedVested,
+        expectedMinClaimable,
+        expectedMaxClaimable
+    ) => {
+        expectedTotalUnlocked = parseUnits(expectedTotalUnlocked);
+        expectedTotalClaimed = parseUnits(expectedTotalClaimed);
+        expectedUpcomingClaimable = parseUnits(expectedUpcomingClaimable);
+        expectedVested = parseUnits(expectedVested);
+        expectedMinClaimable = parseUnits(expectedMinClaimable);
+        expectedMaxClaimable = parseUnits(expectedMaxClaimable);
+
+        const res = await contractView.getUserInfo(contract.address, user.address);
+        expect(res.totalUnlocked).to.closeTo(expectedTotalUnlocked, PRECISION_LOSS);
+        expect(res.totalClaimed).to.closeTo(expectedTotalClaimed, PRECISION_LOSS);
+        expect(res.upcomingClaimable).to.closeTo(expectedUpcomingClaimable, PRECISION_LOSS);
+        expect(res.vested).to.closeTo(expectedVested, PRECISION_LOSS);
+        expect(res.minClaimable).to.closeTo(expectedMinClaimable, PRECISION_LOSS);
+        expect(res.maxClaimable).to.closeTo(expectedMaxClaimable, PRECISION_LOSS);
+    }
+
     before(async () => {
         [owner, feeCollector, user1, user2, user3] = await ethers.getSigners();
+        const ContractView = await ethers.getContractFactory("SHOView");
+        contractView = await ContractView.deploy();
     });
 
     describe("Full flow test (option 2 users)", async() => {
@@ -321,6 +348,8 @@ describe("SHO smart contract", function() {
             await expect(contract.claimUser1()).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
             
             await expect(contract.collectFees()).to.be.revertedWith("SHO: caller is not the fee collector");
+
+            await expect(contractView.getUserInfo(contract.address, owner.address)).to.be.revertedWith("");
         });
 
         it("check private non-view functions", async() => {
@@ -331,10 +360,16 @@ describe("SHO smart contract", function() {
         });
         
         it("first unlock - user 1 claims", async() => {
+            await checkUserInfo(user1, 350, 0, 210, 350, 105, 350);
+                
             await claim2(user1, false, 0, false, 105, 105, 350, 0);
+            await checkUserInfo(user1, 350, 105, 210, 350, 0, 245);
+            
             await claim2(user1, true);
             await claim2(user1, false, 350 - 105 + 1, true);
             await claim2(user1, false, 350 - 105, false, 245, 0, 350, 245);
+            await checkUserInfo(user1, 350, 350, 0, 105, 0, 0);
+
             await claim2(user1, true);
             await claim2(user1, false, 1, true);
             await claim2(user1, false, 10000000, true);
@@ -361,6 +396,8 @@ describe("SHO smart contract", function() {
         });
 
         it("second unlock - user 2 and 1 has nothing to claim", async() => {
+            await checkUserInfo(user1, 350, 350, 105, 105, 0, 0);
+
             await claim2(user1, true);
             await claim2(user1, true, 100, true);
 
@@ -372,7 +409,10 @@ describe("SHO smart contract", function() {
         });
 
         it("second unlock - user 3 claims", async() => {
+            await checkUserInfo(user3, 1120, 0, 280, 280, 826, 1120);
+
             await claim2(user3, false, 0, false, 700 + 126, 126, 420, 0);
+            await checkUserInfo(user3, 1120, 826, 280, 280, 0, 294);
             await claim2(user3, true);
 
             await checkStats2(user3, 826, 1120);
@@ -381,8 +421,11 @@ describe("SHO smart contract", function() {
         it("third unlock - user 1 claims", async() => {
             await time.increase(2592000);
 
+            await checkUserInfo(user1, 455, 350, 0, 0, 105, 105);
+
             await claim2(user1, false, 1, true);
             await claim2(user1, false, 0, false, 105, 105, 105, 0);
+            await checkUserInfo(user1, 455, 455, 0, 0, 0, 0);
             await claim2(user1, true);
             await claim2(user1, false, 1, true);
 
@@ -402,7 +445,9 @@ describe("SHO smart contract", function() {
         });
 
         it("third unlock - user 3 claims", async() => {
+            await checkUserInfo(user3, 1400, 826, 0, 0, 574, 574)
             await claim2(user3, false, 0, false, 294 + 280, 280, 280, 0);
+            await checkUserInfo(user3, 1400, 1400, 0, 0, 0, 0);
             await claim2(user3, true);
 
             await checkStats2(user3, 1400, 1400);
@@ -427,7 +472,9 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - user 1 claims", async() => {
+            await checkUserInfo(user1, 280, 0, 210, 420, 84, 280);
             await claim2(user1, false, 100, false, 184, 84, 280, 100);
+            await checkUserInfo(user1, 280, 184, 110, 320, 0, 96);
             await claim2(user1, true);
             await claim2(user1, false, 100, true);
 
@@ -435,8 +482,11 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - user 2 claims", async() => {
+            await checkUserInfo(user2, 560, 0, 420, 840, 168, 560);
             await claim2(user2, false, 100, false, 268, 168, 560, 100);
+            await checkUserInfo(user2, 560, 268, 320, 740, 0, 292);
             await claim2(user2, false, 100, false, 100, 0, 560, 200);
+            await checkUserInfo(user2, 560, 368, 220, 640, 0, 192);
             await claim2(user2, false, 200, true);
 
             await checkStats2(user2, 368, 560);
@@ -445,18 +495,23 @@ describe("SHO smart contract", function() {
         it("second unlock - user 1 claims", async() => {
             await time.increase(5184000);
             
+            await checkUserInfo(user1, 390, 184, 140, 210, 61.8, 206);
             await claim2(user1, false, 100, false, 161.8, 61.8, 206, 100);
+            await checkUserInfo(user1, 390, 345.8, 40, 110, 0, 44.2);
             await claim2(user1, true);
 
             await checkStats2(user1, 345.8, 390);
         });
 
         it("second unlock - user 3 claims", async() => {
+            await checkUserInfo(user3, 1470, 0, 420, 630, 1029, 1470);
             await claim2(user3, false, 0, false, 189 + 840, 189, 630, 0);
+            await checkUserInfo(user3, 1470, 1029, 420, 630, 0, 441);
             await checkStats2(user3, 189 + 840, 1470);
 
             await claim2(user3, false, 1000, true);
             await claim2(user3, false, 100, false, 100, 0, 630, 100);
+            await checkUserInfo(user3, 1470, 1129, 320, 530, 0, 341);
             await checkStats2(user3, 189 + 840 + 100, 1470);
         });
 
@@ -478,7 +533,9 @@ describe("SHO smart contract", function() {
 
         it("fourth unlock - user 3 claims", async() => {
             await claim2(user3, false, 1, true);
+            await checkUserInfo(user3, 2000, 1129, 0, 0, 871, 871);
             await claim2(user3, false, 0, false, 871, 210, 210, 0);
+            await checkUserInfo(user3, 2000, 2000, 0, 0, 0, 0);
             await claim2(user3, true);
 
             await checkStats2(user3, 2000, 2000);
@@ -486,7 +543,9 @@ describe("SHO smart contract", function() {
 
         it("fourth unlock - user 2 claims", async() => {
             await claim2(user2, false, 1, true);
+            await checkUserInfo(user2, 1200, 368, 0, 0, 832, 832);
             await claim2(user2, false, 0, false, 832, 140, 140, 0);
+            await checkUserInfo(user2, 1200, 1200, 0, 0, 0, 0);
             await claim2(user2, true);
 
             await checkStats2(user2, 1200, 1200);
@@ -494,7 +553,9 @@ describe("SHO smart contract", function() {
 
         it("fourth unlock - user 1 claims", async() => {
             await claim2(user1, false, 1, true);
+            await checkUserInfo(user1, 500, 345.8, 0, 0, 154.2, 154.2);
             await claim2(user1, false, 0, false, 154.2, 70, 70, 0);
+            await checkUserInfo(user1, 500, 500, 0, 0, 0, 0);
             await claim2(user1, true); 
 
             await checkStats2(user1, 500, 500);
@@ -601,12 +662,15 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - user 1 claims", async() => {
+            await checkUserInfo(user1, 350, 0, 210, 350, 350, 350);
             await claim1(user1, false, 350);
+            await checkUserInfo(user1, 350, 350, 210, 350, 0, 0);
             await claim1(user1, true);
         });
 
         it("first unlock - user 1 is eliminated", async() => {
             await eliminate(user1, false, 700, 350);
+            await checkUserInfo(user1, 350, 350, 0, 0, 0, 0);
             await eliminate(user1, true);
         });
 
@@ -616,11 +680,13 @@ describe("SHO smart contract", function() {
 
         it("first unlock - user 2 is eliminated", async() => {
             await eliminate(user2, false, 700, 350);
+            await checkUserInfo(user2, 350, 0, 0, 0, 350, 350);
             await eliminate(user2, true);
         });
 
         it("first unlock - user 2 claims", async() => {
             await claim1(user2, false, 350);
+            await checkUserInfo(user2, 350, 350, 0, 0, 0, 0);
             await claim1(user2, true);
         });
 
@@ -630,10 +696,12 @@ describe("SHO smart contract", function() {
             await claim1(user2, true);
             await eliminate(user1, true);
             await eliminate(user2, true);
+            await checkUserInfo(user2, 350, 350, 0, 0, 0, 0);
         });
 
         it("second unlock - user 3 claims", async() => {
             await claim1(user3, false, 1120);
+            await checkUserInfo(user3, 1120, 1120, 280, 280, 0, 0);
             await claim1(user3, true);
         });
 
@@ -649,8 +717,12 @@ describe("SHO smart contract", function() {
         });
 
         it("third unlock - user 3 claims", async() => {
+            await checkUserInfo(user3, 1400, 1120, 0, 0, 280, 280);
             await claim1(user3, false, 280);
+            await checkUserInfo(user3, 1400, 1400, 0, 0, 0, 0);
             await claim1(user3, true);
+
+            await checkUserInfo(user2, 350, 350, 0, 0, 0, 0);
 
             const contractBalance = await shoToken.balanceOf(contract.address);
             expect(contractBalance).to.equal(0);
@@ -677,28 +749,36 @@ describe("SHO smart contract", function() {
 
         it("second unlock - user 1 is eliminated", async() => {
             await time.increase(2592000);
+            await checkUserInfo(user1, 420, 0, 140, 280, 420, 420);
             await eliminate(user1, false, 700, 420);
+            await checkUserInfo(user1, 420, 0, 0, 0, 420, 420);
             await eliminate(user1, true);
         });
 
         it("third unlock - user 1 claims", async() => {
             await time.increase(2592000);
             await claim1(user1, false, 420);
+            await checkUserInfo(user1, 420, 420, 0, 0, 0, 0);
             await claim1(user1, true);
         });
 
         it("third unlock - user 2 is eliminated", async() => {
+            await checkUserInfo(user2, 560, 0, 140, 140, 560, 560);
             await eliminate(user2, false, 700, 560);
+            await checkUserInfo(user2, 560, 0, 0, 0, 560, 560);
             await eliminate(user2, true);
         });
 
         it("fourth unlock - user 1 has nothing to claim", async() => {
             await time.increase(2592000);
+            await checkUserInfo(user1, 420, 420, 0, 0, 0, 0);
             await claim1(user1, true);
         });
 
         it("fourth unlock - user 2 claims", async() => {
+            await checkUserInfo(user2, 560, 0, 0, 0, 560, 560);
             await claim1(user2, false, 560);
+            await checkUserInfo(user2, 560, 560, 0, 0, 0, 0);
             await claim1(user2, true);
         });
 
