@@ -121,8 +121,8 @@ describe("SHO smart contract", function() {
         await time.increaseTo(startTime);
     }
 
-    const collectFees = async(collectedAll, expectedBaseFee, expectedExtraFee, expectedBurned) => {
-        contract = contract.connect(feeCollector);
+    const collectFees = async(collectedAll, expectedBaseFee, expectedExtraFee, expectedBurned, notFeeCollector) => {
+        contract = contract.connect(notFeeCollector ? user1 : feeCollector);
         if (collectedAll) {
             await expect(contract.collectFees()).to.be.revertedWith("SHO: no fees to collect");
             return;
@@ -346,8 +346,6 @@ describe("SHO smart contract", function() {
 
             contract = contract.connect(user1);
             await expect(contract.claimUser1()).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
-            
-            await expect(contract.collectFees()).to.be.revertedWith("SHO: caller is not the fee collector");
 
             await expect(contractView.getUserInfo(contract.address, owner.address)).to.be.revertedWith("");
         });
@@ -385,7 +383,7 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - collecting fees", async() => {
-            await collectFees(false, 600, 0, 0);
+            await collectFees(false, 600, 0, 0, true);
             await collectFees(true);
         });
 

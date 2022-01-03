@@ -87,11 +87,6 @@ contract SHO is Ownable, ReentrancyGuard {
         uint16 passedUnlocksCount
     );
 
-    modifier onlyFeeCollector() {
-        require(feeCollector == msg.sender, "SHO: caller is not the fee collector");
-        _;
-    }
-
     modifier onlyWhitelistedUser1() {
         require(users1[msg.sender].allocation > 0, "SHO: caller is not whitelisted or does not have the correct option");
         _;
@@ -109,7 +104,7 @@ contract SHO is Ownable, ReentrancyGuard {
         @param _unlockPeriodsDiff array of unlock periods as differentials
             (when unlocks happen from startTime)
         @param _baseFeePercentage base fee in percentage 
-        @param _feeCollector EOA that can collect fees
+        @param _feeCollector EOA that receives fees
         @param _startTime when users can start claiming
         @param _burnValley burned tokens are sent to this address if the SHO token is not burnable
         @param _burnPercentage burn percentage of extra fees
@@ -305,8 +300,9 @@ contract SHO is Ownable, ReentrancyGuard {
 
     /**
         It's important that the fees are collectable not depedning on if users are claiming.
+        Anybody can call this but the fees go to the fee collector.
      */ 
-    function collectFees() external onlyFeeCollector nonReentrant returns (uint120 baseFee, uint120 extraFee, uint120 burned) {
+    function collectFees() external nonReentrant returns (uint120 baseFee, uint120 extraFee, uint120 burned) {
         update();
         require(collectedFeesUnlocksCount < passedUnlocksCount, "SHO: no fees to collect");
         uint16 currentUnlock = passedUnlocksCount - 1;
@@ -331,7 +327,7 @@ contract SHO is Ownable, ReentrancyGuard {
         uint120 totalFee = baseFee + extraFee;
         burned = _burn(extraFee);
         collectedFeesUnlocksCount = currentUnlock + 1;
-        shoToken.safeTransfer(msg.sender, totalFee - burned);
+        shoToken.safeTransfer(feeCollector, totalFee - burned);
         emit FeeCollection(
             currentUnlock,
             totalFee,
@@ -374,8 +370,11 @@ contract SHO is Ownable, ReentrancyGuard {
         burned = amount * burnPercentage / HUNDRED_PERCENT;
         if (burned == 0) return 0;
 
-        (bool success,) = address(shoToken).call(abi.encodeWithSignature("burn(uint256)", burned));
-        if (!success) {
+        uint256 balanceBefore = shoToken.balanceOf(address(this));
+        address(shoToken).call(abi.encodeWithSignature("burn(uint256)", burned));
+        uint256 balanceAfter = shoToken.balanceOf(address(this));
+
+        if (balanceBefore == balanceAfter) {
             shoToken.safeTransfer(burnValley, burned);
         }
     }
