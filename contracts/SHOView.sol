@@ -76,7 +76,8 @@ contract SHOView {
         uint120 upcomingClaimable,
         uint120 vested,
         uint120 minClaimable,
-        uint120 maxClaimable
+        uint120 maxClaimable,
+        uint64 nextUnlockTimestamp
     ) {
         totalUnlocked = getUserTotalUnlocked(shoContract, userAddress);
         totalClaimed = getUserTotalClaimed(shoContract, userAddress);
@@ -84,6 +85,10 @@ contract SHOView {
         vested = getUserVested(shoContract, userAddress);
         minClaimable = getUserMinClaimable(shoContract, userAddress);
         maxClaimable = getUserMaxClaimable(shoContract, userAddress);
+
+        if (shoContract.getPassedUnlocksCount() < shoContract.getTotalUnlocksCount()) {
+            nextUnlockTimestamp = shoContract.startTime() + shoContract.unlockPeriods(shoContract.getPassedUnlocksCount());
+        }
     }
 
     function getUserTotalUnlocked(SHO shoContract, address userAddress) public view returns (uint120 totalUnlocked) {
