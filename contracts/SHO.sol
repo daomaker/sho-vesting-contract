@@ -206,7 +206,7 @@ contract SHO is Ownable, ReentrancyGuard {
         }
 
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? unlockPercentages[user.claimedUnlocksCount - 1] : 0;
-        amountToClaim = user.allocation * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
+        amountToClaim = _applyPercentage(user.allocation, unlockPercentages[currentUnlock] - lastUnlockPercentage);
         amountToClaim = _applyBaseFee(amountToClaim);
 
         user.claimedUnlocksCount = currentUnlock + 1;
@@ -237,7 +237,7 @@ contract SHO is Ownable, ReentrancyGuard {
             require(user.eliminatedAfterUnlock == 0, "SHO: some user already eliminated");
 
             uint120 userAllocation = _applyBaseFee(user.allocation);
-            uint120 uncollectable = userAllocation * unlockPercentages[currentUnlock] / HUNDRED_PERCENT;
+            uint120 uncollectable = _applyPercentage(userAllocation, unlockPercentages[currentUnlock]);
 
             extraFees1Allocation += userAllocation;
             extraFees1AllocationUncollectable += uncollectable;
@@ -309,8 +309,8 @@ contract SHO is Ownable, ReentrancyGuard {
 
         // base fee from users type 1 and 2
         uint32 lastUnlockPercentage = collectedFeesUnlocksCount > 0 ? unlockPercentages[collectedFeesUnlocksCount - 1] : 0;
-        uint120 globalAllocation = globalTotalAllocation * (unlockPercentages[currentUnlock] - lastUnlockPercentage) / HUNDRED_PERCENT;
-        baseFee = globalAllocation * baseFeePercentage / HUNDRED_PERCENT;
+        uint120 globalAllocation = _applyPercentage(globalTotalAllocation, unlockPercentages[currentUnlock] - lastUnlockPercentage);
+        baseFee = _applyPercentage(globalAllocation, baseFeePercentage);
 
         // extra fees from users type 2
         uint120 extraFee2;
@@ -319,7 +319,7 @@ contract SHO is Ownable, ReentrancyGuard {
         }
 
         // extra fees from users type 1
-        uint120 extraFees1AllocationTillNow = extraFees1Allocation * unlockPercentages[currentUnlock] / HUNDRED_PERCENT;
+        uint120 extraFees1AllocationTillNow = _applyPercentage(extraFees1Allocation, unlockPercentages[currentUnlock]);
         uint120 extraFee1 = extraFees1AllocationTillNow - extraFees1AllocationUncollectable;
         extraFees1AllocationUncollectable = extraFees1AllocationTillNow;
 
@@ -367,7 +367,7 @@ contract SHO is Ownable, ReentrancyGuard {
     // PRIVATE FUNCTIONS
 
     function _burn(uint120 amount) private returns (uint120 burned) {
-        burned = amount * burnPercentage / HUNDRED_PERCENT;
+        burned = _applyPercentage(amount, burnPercentage);
         if (burned == 0) return 0;
 
         uint256 balanceBefore = shoToken.balanceOf(address(this));
@@ -387,7 +387,7 @@ contract SHO is Ownable, ReentrancyGuard {
         uint32 unlockPercentageDiffCurrent = currentUnlock > 0 ?
             unlockPercentages[currentUnlock] - unlockPercentages[currentUnlock - 1] : unlockPercentages[currentUnlock];
 
-        uint120 currentUnlocked = user.allocation * unlockPercentageDiffCurrent / HUNDRED_PERCENT;
+        uint120 currentUnlocked = _applyPercentage(user.allocation, unlockPercentageDiffCurrent);
         currentUnlocked = _applyBaseFee(currentUnlocked);
 
         newUnlocked += currentUnlocked;
@@ -422,7 +422,7 @@ contract SHO is Ownable, ReentrancyGuard {
     function _getClaimableFromPreviousUnlocks(User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? unlockPercentages[user.claimedUnlocksCount - 1] : 0;
         uint32 previousUnlockPercentage = currentUnlock > 0 ? unlockPercentages[currentUnlock - 1] : 0;
-        uint120 claimableFromMissedUnlocks = user.allocation * (previousUnlockPercentage - lastUnlockPercentage) / HUNDRED_PERCENT;
+        uint120 claimableFromMissedUnlocks = _applyPercentage(user.allocation, previousUnlockPercentage - lastUnlockPercentage);
         claimableFromMissedUnlocks = _applyBaseFee(claimableFromMissedUnlocks);
         
         claimableFromPreviousUnlocks = user.currentUnlocked - user.currentClaimed;
@@ -431,7 +431,7 @@ contract SHO is Ownable, ReentrancyGuard {
 
     function _getCurrentBaseClaimAmount(User2 memory user, uint16 currentUnlock) private view returns (uint120 baseClaimAmount) {
         if (currentUnlock < unlockPeriods.length - 1) {
-            baseClaimAmount = user.currentUnlocked * freeClaimablePercentage / HUNDRED_PERCENT;
+            baseClaimAmount =_applyPercentage(user.currentUnlocked, freeClaimablePercentage);
         } else {
             baseClaimAmount = user.currentUnlocked;
         }
@@ -442,7 +442,7 @@ contract SHO is Ownable, ReentrancyGuard {
 
         while (fee > 0 && currentUnlock < unlockPeriods.length - 1) {
             uint16 nextUnlock = currentUnlock + 1;
-            uint120 nextUserAvailable = user.allocation * (unlockPercentages[nextUnlock] - unlockPercentages[currentUnlock]) / HUNDRED_PERCENT;
+            uint120 nextUserAvailable = _applyPercentage(user.allocation, unlockPercentages[nextUnlock] - unlockPercentages[currentUnlock]);
             nextUserAvailable = _applyBaseFee(nextUserAvailable);
 
             uint120 currentUnlockFee = fee <= nextUserAvailable ? fee : nextUserAvailable;
@@ -452,8 +452,12 @@ contract SHO is Ownable, ReentrancyGuard {
         }
     }
 
+    function _applyPercentage(uint120 value, uint32 percentage) private pure returns (uint120) {
+        return uint120(uint256(value) * percentage / HUNDRED_PERCENT);
+    }
+
     function _applyBaseFee(uint120 value) private view returns (uint120) {
-        return value - value * baseFeePercentage / HUNDRED_PERCENT;
+        return value - _applyPercentage(value, baseFeePercentage);
     }
 
     function _buildArraySum(uint32[] memory diffArray) internal pure returns (uint32[] memory) {
