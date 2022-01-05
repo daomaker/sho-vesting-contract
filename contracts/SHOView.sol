@@ -106,7 +106,7 @@ contract SHOView {
                 currentUnlock = user.eliminatedAfterUnlock - 1;
             }
 
-            totalUnlocked = user.allocation * shoContract.unlockPercentages(currentUnlock) / HUNDRED_PERCENT;
+            totalUnlocked = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock));
             totalUnlocked = _applyBaseFee(shoContract, totalUnlocked);
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
@@ -130,7 +130,7 @@ contract SHOView {
         if (userOption == 1) {
             User1 memory user = _loadUser1(shoContract, userAddress);
             if (user.claimedUnlocksCount > 0) {
-                totalClaimed = user.allocation * shoContract.unlockPercentages(user.claimedUnlocksCount - 1) / HUNDRED_PERCENT;
+                totalClaimed = _applyPercentage(user.allocation, shoContract.unlockPercentages(user.claimedUnlocksCount - 1));
                 totalClaimed = _applyBaseFee(shoContract, totalClaimed);
             } else {
                 totalClaimed = 0;
@@ -154,7 +154,7 @@ contract SHOView {
             if (user.eliminatedAfterUnlock > 0) {
                 upcomingClaimable = 0;
             } else {
-                upcomingClaimable = user.allocation * (shoContract.unlockPercentages(currentUnlock + 1) - shoContract.unlockPercentages(currentUnlock)) / HUNDRED_PERCENT;
+                upcomingClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock + 1) - shoContract.unlockPercentages(currentUnlock));
                 upcomingClaimable = _applyBaseFee(shoContract, upcomingClaimable);
             }
         } else {
@@ -182,7 +182,7 @@ contract SHOView {
             if (user.eliminatedAfterUnlock > 0) {
                 vested = 0;
             } else {
-                vested = user.allocation * (HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock)) / HUNDRED_PERCENT;
+                vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock));
                 vested = _applyBaseFee(shoContract, vested);
             }
         } else if (userOption == 2) {
@@ -191,7 +191,7 @@ contract SHOView {
                 _updateUserCurrent(shoContract, user, currentUnlock);
             }
            
-            vested = user.allocation * (HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock)) / HUNDRED_PERCENT;
+            vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock));
             vested = _applyBaseFee(shoContract, vested);
             if (vested >= user.debt) {
                 vested -= user.debt;
@@ -213,7 +213,7 @@ contract SHOView {
             User1 memory user = _loadUser1(shoContract, userAddress);
             uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
             currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
-            minClaimable = user.allocation * (shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage) / HUNDRED_PERCENT;
+            minClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
             minClaimable = _applyBaseFee(shoContract, minClaimable);
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
@@ -238,7 +238,7 @@ contract SHOView {
             User1 memory user = _loadUser1(shoContract, userAddress);
             uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
             currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
-            maxClaimable = user.allocation * (shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage) / HUNDRED_PERCENT;
+            maxClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
             maxClaimable = _applyBaseFee(shoContract, maxClaimable);
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
@@ -262,7 +262,7 @@ contract SHOView {
         uint32 unlockPercentageDiffCurrent = currentUnlock > 0 ?
             shoContract.unlockPercentages(currentUnlock) - shoContract.unlockPercentages(currentUnlock - 1) : shoContract.unlockPercentages(currentUnlock);
 
-        uint120 currentUnlocked = user.allocation * unlockPercentageDiffCurrent / HUNDRED_PERCENT;
+        uint120 currentUnlocked = _applyPercentage(user.allocation, unlockPercentageDiffCurrent);
         currentUnlocked = _applyBaseFee(shoContract, currentUnlocked);
 
         newUnlocked += currentUnlocked;
@@ -297,7 +297,7 @@ contract SHOView {
     function _getClaimableFromPreviousUnlocks(SHO shoContract, User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
         uint32 previousUnlockPercentage = currentUnlock > 0 ? shoContract.unlockPercentages(currentUnlock - 1) : 0;
-        uint120 claimableFromMissedUnlocks = user.allocation * (previousUnlockPercentage - lastUnlockPercentage) / HUNDRED_PERCENT;
+        uint120 claimableFromMissedUnlocks = _applyPercentage(user.allocation, previousUnlockPercentage - lastUnlockPercentage);
         claimableFromMissedUnlocks = _applyBaseFee(shoContract, claimableFromMissedUnlocks);
         
         claimableFromPreviousUnlocks = user.currentUnlocked - user.currentClaimed;
@@ -306,13 +306,17 @@ contract SHOView {
 
     function _getCurrentBaseClaimAmount(SHO shoContract, User2 memory user, uint16 currentUnlock) private view returns (uint120 baseClaimAmount) {
         if (currentUnlock < shoContract.getTotalUnlocksCount() - 1) {
-            baseClaimAmount = user.currentUnlocked * shoContract.freeClaimablePercentage() / HUNDRED_PERCENT;
+            baseClaimAmount = _applyPercentage(user.currentUnlocked, shoContract.freeClaimablePercentage());
         } else {
             baseClaimAmount = user.currentUnlocked;
         }
     }
 
     function _applyBaseFee(SHO shoContract, uint120 value) private view returns (uint120) {
-        return value - value * shoContract.baseFeePercentage() / HUNDRED_PERCENT;
+        return value - _applyPercentage(value, shoContract.baseFeePercentage());
+    }
+
+    function _applyPercentage(uint120 value, uint32 percentage) private pure returns (uint120) {
+        return uint120(uint256(value) * percentage / HUNDRED_PERCENT);
     }
 }
