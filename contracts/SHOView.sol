@@ -107,7 +107,7 @@ contract SHOView {
             }
 
             totalUnlocked = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock));
-            totalUnlocked = _applyBaseFee(shoContract, totalUnlocked);
+            totalUnlocked = _applyBaseFee(shoContract, totalUnlocked, 1);
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
 
@@ -131,7 +131,7 @@ contract SHOView {
             User1 memory user = _loadUser1(shoContract, userAddress);
             if (user.claimedUnlocksCount > 0) {
                 totalClaimed = _applyPercentage(user.allocation, shoContract.unlockPercentages(user.claimedUnlocksCount - 1));
-                totalClaimed = _applyBaseFee(shoContract, totalClaimed);
+                totalClaimed = _applyBaseFee(shoContract, totalClaimed, 1);
             } else {
                 totalClaimed = 0;
             }
@@ -155,7 +155,7 @@ contract SHOView {
                 upcomingClaimable = 0;
             } else {
                 upcomingClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock + 1) - shoContract.unlockPercentages(currentUnlock));
-                upcomingClaimable = _applyBaseFee(shoContract, upcomingClaimable);
+                upcomingClaimable = _applyBaseFee(shoContract, upcomingClaimable, 1);
             }
         } else {
             User2 memory user = _loadUser2(shoContract, userAddress);
@@ -183,7 +183,7 @@ contract SHOView {
                 vested = 0;
             } else {
                 vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock));
-                vested = _applyBaseFee(shoContract, vested);
+                vested = _applyBaseFee(shoContract, vested, 1);
             }
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
@@ -192,7 +192,7 @@ contract SHOView {
             }
            
             vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock));
-            vested = _applyBaseFee(shoContract, vested);
+            vested = _applyBaseFee(shoContract, vested, 2);
             if (vested >= user.debt) {
                 vested -= user.debt;
             } else {
@@ -214,7 +214,7 @@ contract SHOView {
             uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
             currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
             minClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
-            minClaimable = _applyBaseFee(shoContract, minClaimable);
+            minClaimable = _applyBaseFee(shoContract, minClaimable, 1);
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
             if (user.claimedUnlocksCount == passedUnlocksCount) {
@@ -239,7 +239,7 @@ contract SHOView {
             uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
             currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
             maxClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
-            maxClaimable = _applyBaseFee(shoContract, maxClaimable);
+            maxClaimable = _applyBaseFee(shoContract, maxClaimable, 1);
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
             if (user.claimedUnlocksCount == passedUnlocksCount) {
@@ -263,7 +263,7 @@ contract SHOView {
             shoContract.unlockPercentages(currentUnlock) - shoContract.unlockPercentages(currentUnlock - 1) : shoContract.unlockPercentages(currentUnlock);
 
         uint120 currentUnlocked = _applyPercentage(user.allocation, unlockPercentageDiffCurrent);
-        currentUnlocked = _applyBaseFee(shoContract, currentUnlocked);
+        currentUnlocked = _applyBaseFee(shoContract, currentUnlocked, 2);
 
         newUnlocked += currentUnlocked;
         if (newUnlocked >= user.debt) {
@@ -298,7 +298,7 @@ contract SHOView {
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
         uint32 previousUnlockPercentage = currentUnlock > 0 ? shoContract.unlockPercentages(currentUnlock - 1) : 0;
         uint120 claimableFromMissedUnlocks = _applyPercentage(user.allocation, previousUnlockPercentage - lastUnlockPercentage);
-        claimableFromMissedUnlocks = _applyBaseFee(shoContract, claimableFromMissedUnlocks);
+        claimableFromMissedUnlocks = _applyBaseFee(shoContract, claimableFromMissedUnlocks, 2);
         
         claimableFromPreviousUnlocks = user.currentUnlocked - user.currentClaimed;
         claimableFromPreviousUnlocks += claimableFromMissedUnlocks;
@@ -312,8 +312,8 @@ contract SHOView {
         }
     }
 
-    function _applyBaseFee(SHO shoContract, uint120 value) private view returns (uint120) {
-        return value - _applyPercentage(value, shoContract.baseFeePercentage());
+    function _applyBaseFee(SHO shoContract, uint120 value, uint8 option) private view returns (uint120) {
+        return value - _applyPercentage(value, option == 1 ? shoContract.baseFeePercentage1() : shoContract.baseFeePercentage2());
     }
 
     function _applyPercentage(uint120 value, uint32 percentage) private pure returns (uint120) {

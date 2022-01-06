@@ -891,12 +891,16 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - user 1 claims", async() => {
+            await checkUserInfo(user1, 400, 0, 240, 400, 400, 400);
+
             await claim1(user1, false, 400);
+            await checkUserInfo(user1, 400, 400, 240, 400, 0, 0);
             await claim1(user1, true);
         });
 
         it("first unlock - user 1 is eliminated", async() => {
             await eliminate(user1, false, 800, 400);
+            await checkUserInfo(user1, 400, 400, 0, 0, 0, 0);
         });
 
         it("first unlock - collecting fees", async() => {
@@ -904,6 +908,7 @@ describe("SHO smart contract", function() {
         });
 
         it("first unlock - user 2 claims", async() => {
+            await checkUserInfo(user2, 700, 0, 420, 700, 210, 700);
             await claim2(user2, false, 490, false, 700, 210, 700, 490);
         });
 
