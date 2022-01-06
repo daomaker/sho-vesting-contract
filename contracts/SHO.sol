@@ -35,7 +35,8 @@ contract SHO is Ownable, ReentrancyGuard {
     IERC20 public immutable shoToken;
     uint64 public immutable startTime;
     address public immutable feeCollector;
-    uint32 public immutable baseFeePercentage;
+    uint32 public immutable baseFeePercentage1;
+    uint32 public immutable baseFeePercentage2;
     uint32 public immutable freeClaimablePercentage;
     address public immutable burnValley;
     uint32 public immutable burnPercentage;
@@ -44,8 +45,9 @@ contract SHO is Ownable, ReentrancyGuard {
     uint32[] public unlockPeriods;
     uint120[] public extraFees2;
 
-    uint120 public globalTotalAllocation;
     uint16 passedUnlocksCount;
+    uint120 public globalTotalAllocation1;
+    uint120 public globalTotalAllocation2;
 
     uint16 public collectedFeesUnlocksCount;
     uint120 public extraFees1Allocation;
@@ -103,7 +105,8 @@ contract SHO is Ownable, ReentrancyGuard {
             (how much of total user's whitelisted allocation can a user claim per unlock) 
         @param _unlockPeriodsDiff array of unlock periods as differentials
             (when unlocks happen from startTime)
-        @param _baseFeePercentage base fee in percentage 
+        @param _baseFeePercentage1 base fee in percentage for option 1 users
+        @param _baseFeePercentage2 base fee in percentage for option 2 users
         @param _feeCollector EOA that receives fees
         @param _startTime when users can start claiming
         @param _burnValley burned tokens are sent to this address if the SHO token is not burnable
@@ -114,7 +117,8 @@ contract SHO is Ownable, ReentrancyGuard {
         IERC20 _shoToken,
         uint32[] memory _unlockPercentagesDiff,
         uint32[] memory _unlockPeriodsDiff,
-        uint32 _baseFeePercentage,
+        uint32 _baseFeePercentage1,
+        uint32 _baseFeePercentage2,
         address _feeCollector,
         uint64 _startTime,
         address _burnValley,
@@ -125,7 +129,8 @@ contract SHO is Ownable, ReentrancyGuard {
         require(_unlockPercentagesDiff.length > 0, "SHO: 0 unlock percentages");
         require(_unlockPercentagesDiff.length <= 200, "SHO: too many unlock percentages");
         require(_unlockPeriodsDiff.length == _unlockPercentagesDiff.length, "SHO: different array lengths");
-        require(_baseFeePercentage <= HUNDRED_PERCENT, "SHO: initial fee percentage higher than 100%");
+        require(_baseFeePercentage1 <= HUNDRED_PERCENT, "SHO: base fee percentage 1 higher than 100%");
+        require(_baseFeePercentage2 <= HUNDRED_PERCENT, "SHO: base fee percentage 2 higher than 100%");
         require(_feeCollector != address(0), "SHO: fee collector zero address");
         require(_startTime > block.timestamp, "SHO: start time must be in future");
         require(_burnValley != address(0), "SHO: burn valley zero address");
@@ -140,7 +145,8 @@ contract SHO is Ownable, ReentrancyGuard {
         shoToken = _shoToken;
         unlockPercentages = _unlockPercentages;
         unlockPeriods = _unlockPeriods;
-        baseFeePercentage = _baseFeePercentage;
+        baseFeePercentage1 = _baseFeePercentage1;
+        baseFeePercentage2 = _baseFeePercentage2;
         feeCollector = _feeCollector;
         startTime = _startTime;
         burnValley = _burnValley;
@@ -165,7 +171,8 @@ contract SHO is Ownable, ReentrancyGuard {
         require(userAddresses.length == allocations.length, "SHO: different array lengths");
         require(userAddresses.length == options.length, "SHO: different array lengths");
 
-        uint120 _globalTotalAllocation;
+        uint120 _globalTotalAllocation1;
+        uint120 _globalTotalAllocation2;
         for (uint256 i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
             require(options[i] == 1 || options[i] == 2, "SHO: invalid user option");
@@ -174,10 +181,11 @@ contract SHO is Ownable, ReentrancyGuard {
 
             if (options[i] == 1) {
                 users1[userAddress].allocation = allocations[i];
+                _globalTotalAllocation1 += allocations[i];
             } else if (options[i] == 2) {
                 users2[userAddress].allocation = allocations[i];
+                _globalTotalAllocation2 += allocations[i];
             }
-            _globalTotalAllocation += allocations[i];
 
             emit Whitelist(
                 userAddresses[i],
@@ -186,7 +194,8 @@ contract SHO is Ownable, ReentrancyGuard {
             );
         }
             
-        globalTotalAllocation = _globalTotalAllocation;
+        globalTotalAllocation1 = _globalTotalAllocation1;
+        globalTotalAllocation2 = _globalTotalAllocation2;
     }
 
     /**
@@ -207,7 +216,7 @@ contract SHO is Ownable, ReentrancyGuard {
 
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? unlockPercentages[user.claimedUnlocksCount - 1] : 0;
         amountToClaim = _applyPercentage(user.allocation, unlockPercentages[currentUnlock] - lastUnlockPercentage);
-        amountToClaim = _applyBaseFee(amountToClaim);
+        amountToClaim = _applyBaseFee(amountToClaim, 1);
 
         user.claimedUnlocksCount = currentUnlock + 1;
         users1[msg.sender] = user;
@@ -236,7 +245,7 @@ contract SHO is Ownable, ReentrancyGuard {
             require(user.allocation > 0, "SHO: some user not option 1");
             require(user.eliminatedAfterUnlock == 0, "SHO: some user already eliminated");
 
-            uint120 userAllocation = _applyBaseFee(user.allocation);
+            uint120 userAllocation = _applyBaseFee(user.allocation, 1);
             uint120 uncollectable = _applyPercentage(userAllocation, unlockPercentages[currentUnlock]);
 
             extraFees1Allocation += userAllocation;
@@ -309,8 +318,10 @@ contract SHO is Ownable, ReentrancyGuard {
 
         // base fee from users type 1 and 2
         uint32 lastUnlockPercentage = collectedFeesUnlocksCount > 0 ? unlockPercentages[collectedFeesUnlocksCount - 1] : 0;
-        uint120 globalAllocation = _applyPercentage(globalTotalAllocation, unlockPercentages[currentUnlock] - lastUnlockPercentage);
-        baseFee = _applyPercentage(globalAllocation, baseFeePercentage);
+        uint120 globalAllocation1 = _applyPercentage(globalTotalAllocation1, unlockPercentages[currentUnlock] - lastUnlockPercentage);
+        uint120 globalAllocation2 = _applyPercentage(globalTotalAllocation2, unlockPercentages[currentUnlock] - lastUnlockPercentage);
+        baseFee = _applyPercentage(globalAllocation1, baseFeePercentage1);
+        baseFee += _applyPercentage(globalAllocation2, baseFeePercentage2);
 
         // extra fees from users type 2
         uint120 extraFee2;
@@ -388,7 +399,7 @@ contract SHO is Ownable, ReentrancyGuard {
             unlockPercentages[currentUnlock] - unlockPercentages[currentUnlock - 1] : unlockPercentages[currentUnlock];
 
         uint120 currentUnlocked = _applyPercentage(user.allocation, unlockPercentageDiffCurrent);
-        currentUnlocked = _applyBaseFee(currentUnlocked);
+        currentUnlocked = _applyBaseFee(currentUnlocked, 2);
 
         newUnlocked += currentUnlocked;
         if (newUnlocked >= user.debt) {
@@ -423,7 +434,7 @@ contract SHO is Ownable, ReentrancyGuard {
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? unlockPercentages[user.claimedUnlocksCount - 1] : 0;
         uint32 previousUnlockPercentage = currentUnlock > 0 ? unlockPercentages[currentUnlock - 1] : 0;
         uint120 claimableFromMissedUnlocks = _applyPercentage(user.allocation, previousUnlockPercentage - lastUnlockPercentage);
-        claimableFromMissedUnlocks = _applyBaseFee(claimableFromMissedUnlocks);
+        claimableFromMissedUnlocks = _applyBaseFee(claimableFromMissedUnlocks, 2);
         
         claimableFromPreviousUnlocks = user.currentUnlocked - user.currentClaimed;
         claimableFromPreviousUnlocks += claimableFromMissedUnlocks;
@@ -443,7 +454,7 @@ contract SHO is Ownable, ReentrancyGuard {
         while (fee > 0 && currentUnlock < unlockPeriods.length - 1) {
             uint16 nextUnlock = currentUnlock + 1;
             uint120 nextUserAvailable = _applyPercentage(user.allocation, unlockPercentages[nextUnlock] - unlockPercentages[currentUnlock]);
-            nextUserAvailable = _applyBaseFee(nextUserAvailable);
+            nextUserAvailable = _applyBaseFee(nextUserAvailable, 2);
 
             uint120 currentUnlockFee = fee <= nextUserAvailable ? fee : nextUserAvailable;
             extraFees2[nextUnlock] += currentUnlockFee;
@@ -456,8 +467,8 @@ contract SHO is Ownable, ReentrancyGuard {
         return uint120(uint256(value) * percentage / HUNDRED_PERCENT);
     }
 
-    function _applyBaseFee(uint120 value) private view returns (uint120) {
-        return value - _applyPercentage(value, baseFeePercentage);
+    function _applyBaseFee(uint120 value, uint8 option) private view returns (uint120) {
+        return value - _applyPercentage(value, option == 1 ? baseFeePercentage1 : baseFeePercentage2);
     }
 
     function _buildArraySum(uint32[] memory diffArray) internal pure returns (uint32[] memory) {
