@@ -67,6 +67,13 @@ contract SHOView {
         }
     }
 
+    function getUserOptions(SHO shoContract, address[] calldata userAddresses) public view returns (uint8[] memory userOptions) {
+        userOptions = new uint8[](userAddresses.length);
+        for (uint256 i = 0; i < userAddresses.length; i++) {
+            userOptions[i] = getUserOption(shoContract, userAddresses[i]);
+        }
+    }
+
     function getUserInfo(
         SHO shoContract, 
         address userAddress
