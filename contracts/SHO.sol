@@ -194,8 +194,8 @@ contract SHO is Ownable, ReentrancyGuard {
             );
         }
             
-        globalTotalAllocation1 = _globalTotalAllocation1;
-        globalTotalAllocation2 = _globalTotalAllocation2;
+        globalTotalAllocation1 += _globalTotalAllocation1;
+        globalTotalAllocation2 += _globalTotalAllocation2;
     }
 
     /**

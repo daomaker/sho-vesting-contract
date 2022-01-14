@@ -10,7 +10,7 @@ describe("SHO smart contract", function() {
         return ethers.utils.parseUnits(value.toString(), decimals);
     }
 
-    const whitelistUsers = async(whitelist) => {
+    const whitelistUsers = async(whitelist, splitWhitelisting = false) => {
         const allocations = whitelist.allocations.map((raw) => parseUnits(raw));
 
         await expect(contract.whitelistUsers([owner.address], [1, 1], [2, 2])).to.be.revertedWith("SHO: different array lengths");
@@ -22,7 +22,15 @@ describe("SHO smart contract", function() {
             .to.be.revertedWith("Ownable: caller is not the owner");
 
         contract = contract.connect(owner); 
-        await contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options);
+
+        if (splitWhitelisting) {
+            const len = whitelist.wallets.length;
+            await contract.whitelistUsers(whitelist.wallets.slice(0, 1), allocations.slice(0, 1), whitelist.options.slice(0, 1));
+            await contract.whitelistUsers(whitelist.wallets.slice(1, len), allocations.slice(1, len), whitelist.options.slice(1, len));
+        } else {
+            await contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options);
+        }
+
         await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 1)))
             .to.be.revertedWith("SHO: some users are already whitelisted");
         await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 2)))
@@ -91,7 +99,7 @@ describe("SHO smart contract", function() {
             .to.be.revertedWith("SHO: invalid unlock percentages"); 
     }
 
-    const init = async(unlockPercentages, unlockPeriods, baseFee1, baseFee2, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false) => {
+    const init = async(unlockPercentages, unlockPeriods, baseFee1, baseFee2, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false, splitWhitelisting = false) => {
         shoTokenDecimals = _shoTokenDecimals;
         shoTokenBurnable = _shoTokenBurnable;
         const startTime = Number(await time.latest()) + 300;
@@ -125,7 +133,7 @@ describe("SHO smart contract", function() {
         expect(await contract.baseFeePercentage1()).to.equal(baseFee1);
         expect(await contract.baseFeePercentage2()).to.equal(baseFee2);
 
-        await whitelistUsers(whitelist);
+        await whitelistUsers(whitelist, splitWhitelisting);
 
         await expect(contract.update()).to.be.revertedWith("SHO: before startTime");
 
@@ -737,7 +745,10 @@ describe("SHO smart contract", function() {
                     wallets: [user1.address, user2.address],
                     allocations: [1000, 1000],
                     options: [2, 1]
-                }
+                },
+                18,
+                false,
+                true
             );
         });
 
