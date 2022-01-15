@@ -359,6 +359,9 @@ describe("SHO smart contract", function() {
         it("check reverts", async() => {
             contract = contract.connect(user1);
             await expect(contract.claimUser2(0)).to.be.revertedWith("SHO: no unlocks passed");
+
+            await checkUserInfo(user1, 0, 0, 350, 700, 0, 0);
+
             await time.increase(100);
 
             contract = contract.connect(feeCollector);
@@ -673,6 +676,9 @@ describe("SHO smart contract", function() {
 
             contract = contract.connect(owner);
             await expect(contract.eliminateUsers1([user1.address])).to.be.revertedWith("SHO: no unlocks passed");
+
+            await checkUserInfo(user1, 0, 0, 350, 700, 0, 0);
+            await checkUserInfo(user3, 0, 0, 700, 1400, 0, 0);
 
             await time.increase(100);
 

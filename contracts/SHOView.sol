@@ -154,24 +154,24 @@ contract SHOView {
 
         uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
         if (passedUnlocksCount == shoContract.getTotalUnlocksCount()) return 0;
-        uint16 currentUnlock = passedUnlocksCount - 1;
+        uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
 
         if (userOption == 1) {
             User1 memory user = _loadUser1(shoContract, userAddress);
             if (user.eliminatedAfterUnlock > 0) {
                 upcomingClaimable = 0;
             } else {
-                upcomingClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock + 1) - shoContract.unlockPercentages(currentUnlock));
+                upcomingClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(passedUnlocksCount) - currentUnlockPercentage);
                 upcomingClaimable = _applyBaseFee(shoContract, upcomingClaimable, 1);
             }
         } else {
             User2 memory user = _loadUser2(shoContract, userAddress);
             if (user.claimedUnlocksCount < passedUnlocksCount) {
-                _updateUserCurrent(shoContract, user, currentUnlock);
+                _updateUserCurrent(shoContract, user, passedUnlocksCount - 1);
             }
 
             uint120 totalUnlockedPrev = user.totalUnlocked;
-            _updateUserCurrent(shoContract, user, currentUnlock + 1);
+            _updateUserCurrent(shoContract, user, passedUnlocksCount);
             return user.totalUnlocked - totalUnlockedPrev;
         }
     }
@@ -182,23 +182,23 @@ contract SHOView {
 
         uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
         if (passedUnlocksCount == shoContract.getTotalUnlocksCount()) return 0;
-        uint16 currentUnlock = passedUnlocksCount - 1;
+        uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
         
         if (userOption == 1) {
             User1 memory user = _loadUser1(shoContract, userAddress);
             if (user.eliminatedAfterUnlock > 0) {
                 vested = 0;
             } else {
-                vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock));
+                vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - currentUnlockPercentage);
                 vested = _applyBaseFee(shoContract, vested, 1);
             }
         } else if (userOption == 2) {
             User2 memory user = _loadUser2(shoContract, userAddress);
             if (user.claimedUnlocksCount < passedUnlocksCount) {
-                _updateUserCurrent(shoContract, user, currentUnlock);
+                _updateUserCurrent(shoContract, user, passedUnlocksCount - 1);
             }
            
-            vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - shoContract.unlockPercentages(currentUnlock));
+            vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - currentUnlockPercentage);
             vested = _applyBaseFee(shoContract, vested, 2);
             if (vested >= user.debt) {
                 vested -= user.debt;
