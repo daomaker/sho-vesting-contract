@@ -44,6 +44,7 @@ contract SHO is Ownable, ReentrancyGuard {
     uint32[] public unlockPercentages;
     uint32[] public unlockPeriods;
     uint120[] public extraFees2;
+    bool public whitelistingAllowed = true;
 
     uint16 passedUnlocksCount;
     uint120 public globalTotalAllocation1;
@@ -164,9 +165,10 @@ contract SHO is Ownable, ReentrancyGuard {
     function whitelistUsers(
         address[] calldata userAddresses,
         uint120[] calldata allocations,
-        uint8[] calldata options
+        uint8[] calldata options,
+        bool last
     ) external onlyOwner {
-        require(shoToken.balanceOf(address(this)) == 0, "SHO: whitelisting too late");
+        require(whitelistingAllowed, "SHO: whitelisting not allowed anymore");
         require(userAddresses.length != 0, "SHO: zero length array");
         require(userAddresses.length == allocations.length, "SHO: different array lengths");
         require(userAddresses.length == options.length, "SHO: different array lengths");
@@ -196,6 +198,10 @@ contract SHO is Ownable, ReentrancyGuard {
             
         globalTotalAllocation1 += _globalTotalAllocation1;
         globalTotalAllocation2 += _globalTotalAllocation2;
+        
+        if (last) {
+            whitelistingAllowed = false;
+        }
     }
 
     /**
