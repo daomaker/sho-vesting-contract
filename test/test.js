@@ -13,29 +13,29 @@ describe("SHO smart contract", function() {
     const whitelistUsers = async(whitelist, splitWhitelisting = false) => {
         const allocations = whitelist.allocations.map((raw) => parseUnits(raw));
 
-        await expect(contract.whitelistUsers([owner.address], [1, 1], [2, 2])).to.be.revertedWith("SHO: different array lengths");
-        await expect(contract.whitelistUsers([], [], [])).to.be.revertedWith("SHO: zero length array");
-        await expect(contract.whitelistUsers([owner.address], [1], [0])).to.be.revertedWith("SHO: invalid user option");
+        await expect(contract.whitelistUsers([owner.address], [1, 1], [2, 2], true)).to.be.revertedWith("SHO: different array lengths");
+        await expect(contract.whitelistUsers([], [], [], true)).to.be.revertedWith("SHO: zero length array");
+        await expect(contract.whitelistUsers([owner.address], [1], [0], true)).to.be.revertedWith("SHO: invalid user option");
 
         contract = contract.connect(user1); 
-        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options))
+        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options, true))
             .to.be.revertedWith("Ownable: caller is not the owner");
 
         contract = contract.connect(owner); 
 
         if (splitWhitelisting) {
             const len = whitelist.wallets.length;
-            await contract.whitelistUsers(whitelist.wallets.slice(0, 1), allocations.slice(0, 1), whitelist.options.slice(0, 1));
-            await contract.whitelistUsers(whitelist.wallets.slice(1, len), allocations.slice(1, len), whitelist.options.slice(1, len));
+            await contract.whitelistUsers(whitelist.wallets.slice(0, 1), allocations.slice(0, 1), whitelist.options.slice(0, 1), false);
+
+            await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 1), false))
+                .to.be.revertedWith("SHO: some users are already whitelisted");
+            await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 2), false))
+                .to.be.revertedWith("SHO: some users are already whitelisted");
+
+            await contract.whitelistUsers(whitelist.wallets.slice(1, len), allocations.slice(1, len), whitelist.options.slice(1, len), true);
         } else {
-            await contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options);
+            await contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options, true);
         }
-
-        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 1)))
-            .to.be.revertedWith("SHO: some users are already whitelisted");
-        await expect(contract.whitelistUsers(whitelist.wallets, allocations, whitelist.options.map(option => 2)))
-            .to.be.revertedWith("SHO: some users are already whitelisted");
-
 
         let globalTotalAllocation1 = 0;
         let globalTotalAllocation2 = 0;
@@ -51,8 +51,8 @@ describe("SHO smart contract", function() {
         }
         
         await shoToken.transfer(contract.address, parseUnits(globalTotalAllocation1 + globalTotalAllocation2));
-        await expect(contract.whitelistUsers([owner.address], [1], [2]))
-            .to.be.revertedWith("SHO: whitelisting too late");
+        await expect(contract.whitelistUsers([owner.address], [1], [2], false))
+            .to.be.revertedWith("SHO: whitelisting not allowed anymore");
 
         expect(await contract.globalTotalAllocation1()).to.equal(parseUnits(globalTotalAllocation1));
         expect(await contract.globalTotalAllocation2()).to.equal(parseUnits(globalTotalAllocation2));
