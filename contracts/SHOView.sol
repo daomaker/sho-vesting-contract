@@ -74,6 +74,14 @@ contract SHOView {
         }
     }
 
+    function areEliminated(SHO shoContract, address[] calldata userAddresses) public view returns (uint16[] memory eliminated) {
+        eliminated = new uint16[](userAddresses.length);
+        for (uint256 i = 0; i < userAddresses.length; i++) {
+            (, uint16 eliminatedAfterUnlock,) = shoContract.users1(userAddresses[i]);
+            eliminated[i] = eliminatedAfterUnlock;
+        }
+    }
+
     function getUserInfo(
         SHO shoContract, 
         address userAddress

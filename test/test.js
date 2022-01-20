@@ -796,6 +796,10 @@ describe("SHO smart contract", function() {
             await eliminate(user2, false, 700, 560);
             await checkUserInfo(user2, 560, 0, 0, 0, 560, 560);
             await eliminate(user2, true);
+
+            const eliminated = await contractView.areEliminated(contract.address, [user1.address, user2.address]);
+            expect(eliminated[0]).to.equal(2);
+            expect(eliminated[1]).to.equal(3);
         });
 
         it("fourth unlock - user 1 has nothing to claim", async() => {
