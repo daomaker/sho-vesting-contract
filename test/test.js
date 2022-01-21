@@ -99,7 +99,7 @@ describe("SHO smart contract", function() {
             .to.be.revertedWith("SHO: invalid unlock percentages"); 
     }
 
-    const init = async(unlockPercentages, unlockPeriods, baseFee1, baseFee2, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false, splitWhitelisting = false) => {
+    const init = async(unlockPercentages, unlockPeriods, baseFee1, baseFee2, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false, splitWhitelisting = false, shiftToStartTime = true) => {
         shoTokenDecimals = _shoTokenDecimals;
         shoTokenBurnable = _shoTokenBurnable;
         const startTime = Number(await time.latest()) + 300;
@@ -137,7 +137,9 @@ describe("SHO smart contract", function() {
 
         await expect(contract.update()).to.be.revertedWith("SHO: before startTime");
 
-        await time.increaseTo(startTime);
+        if (shiftToStartTime) {
+            await time.increaseTo(startTime);
+        }
     }
 
     const collectFees = async(collectedAll, expectedBaseFee, expectedExtraFee, expectedBurned, notFeeCollector) => {
@@ -838,8 +840,15 @@ describe("SHO smart contract", function() {
                 },
                 18,
                 false,
-                true
+                true,
+                false
             );
+        });
+
+        it("before start time - check vested and upcoming claimable", async() => {
+            await checkUserInfo(user1, 0, 0, 350, 700, 0, 0);
+            await checkUserInfo(user2, 0, 0, 350, 700, 0, 0);
+            await time.increase(300);
         });
 
         it("first unlock - user 1 claims", async() => {

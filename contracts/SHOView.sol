@@ -82,6 +82,12 @@ contract SHOView {
         }
     }
 
+    function getPassedUnlocksCount(SHO shoContract) public view returns (uint16 passedUnlocksCount) {
+        if (shoContract.startTime() <= block.timestamp) {
+            passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        }
+    }
+
     function getUserInfo(
         SHO shoContract, 
         address userAddress
@@ -101,8 +107,9 @@ contract SHOView {
         minClaimable = getUserMinClaimable(shoContract, userAddress);
         maxClaimable = getUserMaxClaimable(shoContract, userAddress);
 
-        if (shoContract.getPassedUnlocksCount() < shoContract.getTotalUnlocksCount()) {
-            nextUnlockTimestamp = shoContract.startTime() + shoContract.unlockPeriods(shoContract.getPassedUnlocksCount());
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
+        if (passedUnlocksCount < shoContract.getTotalUnlocksCount()) {
+            nextUnlockTimestamp = shoContract.startTime() + shoContract.unlockPeriods(passedUnlocksCount);
         }
     }
 
@@ -110,7 +117,7 @@ contract SHOView {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
-        uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == 0) return 0;
         uint16 currentUnlock = passedUnlocksCount - 1;
 
@@ -139,7 +146,7 @@ contract SHOView {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
-        uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == 0) return 0;
 
         if (userOption == 1) {
@@ -160,7 +167,7 @@ contract SHOView {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
-        uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == shoContract.getTotalUnlocksCount()) return 0;
         uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
 
@@ -188,7 +195,7 @@ contract SHOView {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
-        uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == shoContract.getTotalUnlocksCount()) return 0;
         uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
         
@@ -220,7 +227,7 @@ contract SHOView {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
-        uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == 0) return 0;
         uint16 currentUnlock = passedUnlocksCount - 1;
 
@@ -245,7 +252,7 @@ contract SHOView {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
-        uint16 passedUnlocksCount = shoContract.getPassedUnlocksCount();
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == 0) return 0;
         uint16 currentUnlock = passedUnlocksCount - 1;
 
