@@ -1,6 +1,6 @@
 async function main() {
-    const name = "X";
-    const symbol = "XXX";
+    const name = "TEST";
+    const symbol = "TEST";
     const initialBalance = 10000000;
     const decimals = 18;
 
