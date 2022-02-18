@@ -128,7 +128,7 @@ contract SHO is Ownable, ReentrancyGuard {
     ) {
         require(address(_shoToken) != address(0), "SHO: sho token zero address");
         require(_unlockPercentagesDiff.length > 0, "SHO: 0 unlock percentages");
-        require(_unlockPercentagesDiff.length <= 200, "SHO: too many unlock percentages");
+        require(_unlockPercentagesDiff.length <= 800, "SHO: too many unlock percentages");
         require(_unlockPeriodsDiff.length == _unlockPercentagesDiff.length, "SHO: different array lengths");
         require(_baseFeePercentage1 <= HUNDRED_PERCENT, "SHO: base fee percentage 1 higher than 100%");
         require(_baseFeePercentage2 <= HUNDRED_PERCENT, "SHO: base fee percentage 2 higher than 100%");
@@ -176,6 +176,13 @@ contract SHO is Ownable, ReentrancyGuard {
         uint120 _globalTotalAllocation2;
         for (uint256 i = 0; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
+            if (userAddress == feeCollector) {
+                require(burnPercentage == 0);
+                globalTotalAllocation1 += allocations[i];
+                extraFees1Allocation += _applyBaseFee(allocations[i], 1);
+                continue;
+            }
+
             require(options[i] == 1 || options[i] == 2, "SHO: invalid user option");
             require(users1[userAddress].allocation == 0, "SHO: some users are already whitelisted");
             require(users2[userAddress].allocation == 0, "SHO: some users are already whitelisted");

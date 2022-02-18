@@ -41,7 +41,9 @@ describe("SHO smart contract", function() {
         let globalTotalAllocation2 = 0;
         for (let i = 0; i < whitelist.wallets.length; i++) {
             const userInfo = await contract[`users${whitelist.options[i]}`](whitelist.wallets[i]);
-            expect(userInfo.allocation).to.equal(allocations[i]);
+            if (whitelist.wallets[i].toLowerCase() != feeCollector.address.toLowerCase()) {
+                expect(userInfo.allocation).to.equal(allocations[i]);
+            }
 
             if (whitelist.options[i] == 1) {
                 globalTotalAllocation1 += whitelist.allocations[i];
@@ -67,7 +69,7 @@ describe("SHO smart contract", function() {
         await expect(Contract.deploy(shoToken.address, [], unlockPeriods, baseFee1, baseFee2, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: 0 unlock percentages");
 
-        const unlockPercentagesMany = new Array(201).fill(0);
+        const unlockPercentagesMany = new Array(801).fill(0);
         await expect(Contract.deploy(shoToken.address, unlockPercentagesMany, unlockPeriods, baseFee1, baseFee2, feeCollector.address, startTime, burnValley, burnPercentage, freeClaimablePercentage))
             .to.be.revertedWith("SHO: too many unlock percentages");  
 
@@ -99,7 +101,7 @@ describe("SHO smart contract", function() {
             .to.be.revertedWith("SHO: invalid unlock percentages"); 
     }
 
-    const init = async(unlockPercentages, unlockPeriods, baseFee1, baseFee2, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false, splitWhitelisting = false, shiftToStartTime = true) => {
+    const init = async(unlockPercentages, unlockPeriods, baseFee1, baseFee2, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false, splitWhitelisting = false, shiftToStartTime = true, burnPercentage = 300000) => {
         shoTokenDecimals = _shoTokenDecimals;
         shoTokenBurnable = _shoTokenBurnable;
         const startTime = Number(await time.latest()) + 300;
@@ -109,7 +111,6 @@ describe("SHO smart contract", function() {
         const freeClaimablePercentage = baseFee2;
         const BurnValley = await ethers.getContractFactory("BurnValley");
         burnValley = await BurnValley.deploy();
-        const burnPercentage = 300000;
 
         await testConstructorRequireStatements(unlockPercentages, unlockPeriods, baseFee1, baseFee2, startTime, burnValley.address, burnPercentage, freeClaimablePercentage);
 
@@ -949,6 +950,47 @@ describe("SHO smart contract", function() {
         it("third unlock - collecting fees", async() => {
             await time.increase(2592000);
             await collectFees(false, 100 + 300, 400 + 490, 267);
+        });
+    });
+
+    describe("Fee collector whitelisted", async() => {
+        before(async() => {
+            await init(
+                [500000, 300000, 200000],
+                [0, 2592000, 2592000],
+                200000,
+                300000,
+                {
+                    wallets: [user1.address, feeCollector.address],
+                    allocations: [1000, 2000],
+                    options: [1, 1]
+                },
+                18,
+                false,
+                true,
+                true,
+                0
+            );
+        });
+
+        it("first unlock - user 1 claims", async() => {
+            await claim1(user1, false, 400);
+            await collectFees(false, 300, 800, 0, false);
+            await collectFees(true);
+            await eliminate(user1, false, 800, 400);
+        });
+
+        it("second unlock - collecting fees", async() => {
+            await time.increase(2592000);
+            await claim1(user1, true);
+            await collectFees(false, 180, 720, 0, true);
+        });
+
+        it("third unlock - collecting fees", async() => {
+            await time.increase(2592000);
+            await claim1(user1, true);
+            await collectFees(false, 120, 480, 0, true);
+            await collectFees(true);
         });
     });
 });
