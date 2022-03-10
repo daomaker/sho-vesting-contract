@@ -90,8 +90,8 @@ contract SHO is Ownable, ReentrancyGuard {
         uint16 passedUnlocksCount
     );
 
-    modifier onlyWhitelistedUser1() {
-        require(users1[msg.sender].allocation > 0, "SHO: caller is not whitelisted or does not have the correct option");
+    modifier onlyWhitelistedUser1(address userAddress) {
+        require(users1[userAddress].allocation > 0, "SHO: passed address is not whitelisted or does not have the correct option");
         _;
     }
 
@@ -203,13 +203,17 @@ contract SHO is Ownable, ReentrancyGuard {
         }
     }
 
+    function claimUser1() external returns (uint120 amountToClaim) {
+        return claimUser1(msg.sender);
+    }
+
     /**
         Users type 1 claims all the available amount without increasing the fee.
         (there's still the baseFee deducted from their allocation).
     */
-    function claimUser1() onlyWhitelistedUser1 external nonReentrant returns (uint120 amountToClaim) {
+    function claimUser1(address userAddress) onlyWhitelistedUser1(userAddress) public nonReentrant returns (uint120 amountToClaim) {
         update();
-        User1 memory user = users1[msg.sender];
+        User1 memory user = users1[userAddress];
         require(passedUnlocksCount > 0, "SHO: no unlocks passed");
         require(user.claimedUnlocksCount < passedUnlocksCount, "SHO: nothing to claim");
 
@@ -224,10 +228,10 @@ contract SHO is Ownable, ReentrancyGuard {
         amountToClaim = _applyBaseFee(amountToClaim, 1);
 
         user.claimedUnlocksCount = currentUnlock + 1;
-        users1[msg.sender] = user;
-        shoToken.safeTransfer(msg.sender, amountToClaim);
+        users1[userAddress] = user;
+        shoToken.safeTransfer(userAddress, amountToClaim);
         emit Claim1(
-            msg.sender, 
+            userAddress, 
             currentUnlock,
             amountToClaim
         );
@@ -330,8 +334,10 @@ contract SHO is Ownable, ReentrancyGuard {
 
         // extra fees from users type 2
         uint120 extraFee2;
-        for (uint16 i = collectedFeesUnlocksCount; i <= currentUnlock; i++) {
-            extraFee2 += extraFees2[i];
+        if (globalTotalAllocation2 > 0) {
+            for (uint16 i = collectedFeesUnlocksCount; i <= currentUnlock; i++) {
+                extraFee2 += extraFees2[i];
+            }
         }
 
         // extra fees from users type 1
