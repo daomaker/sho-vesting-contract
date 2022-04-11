@@ -1,0 +1,193 @@
+import { ethers } from 'ethers';
+import { raw_mongo_conn } from '../cloud/server_helpers';
+
+const config = require('../config.js');
+const USE_ENV = process.env.USE_ENV || 'dev';
+
+const shoViewAbi = require('../../abi/shoVestingView.json');
+const shoVestingAbi = require('../../abi/shoVesting.json');
+const { getProviderByChainId } = require('./cryptoUtils');
+const { getParticipantAllocations } = require('../onchain/getParticipantAllocations');
+const shoViewAddress = '0xDDA69d4952B7FA11D0e5464318C88De173433d54';
+
+const GAS_PRICE_MULTIPLIER_2 = 3;
+const GAS_PRICE_MULTIPLIER_1 = 2;
+
+interface VestingContract {
+	_id: string;
+	vesting_smart_contract_address: string;
+	chain_id: string;
+}
+
+export default class SHOVestingBot {
+	async main(): Promise<void> {
+		const vestingContracts = await this.getAllVestingAddresses();
+		for (const vestingContract of vestingContracts) {
+			if (vestingContract.chain_id && vestingContract.vesting_smart_contract_address && vestingContract._id) {
+				await this.eliminate(vestingContract);
+			}
+		}
+	}
+
+	async getAllVestingAddresses(withTokenAddresses = false): Promise<VestingContract[]> {
+		console.log(this.constructor.name, this.getAllVestingAddresses.name, 'info:', 'getting all vesting addresses');
+
+		const db = await raw_mongo_conn();
+		const res = await db.db_instance
+			.collection('Offering')
+			.find({
+				vesting_smart_contract_address: { $exists: true, $ne: null },
+				chain_id: { $exists: true, $ne: null },
+			})
+			.project({
+				vesting_smart_contract_address: 1,
+				chain_id: 1,
+			})
+			.toArray();
+
+		if (withTokenAddresses) {
+			const promises = [];
+			for (let i = 0; i < res.length; i++) {
+				const provider = getProviderByChainId(Number(res[i].chain_id));
+				if (provider) {
+					const contract = new ethers.Contract(
+						res[i].vesting_smart_contract_address,
+						shoVestingAbi,
+						provider
+					);
+					promises.push(contract.shoToken());
+					if ((i + 1) % 5 == 0) await Promise.all(promises);
+				} else {
+					res.splice(i, 1);
+					i--;
+				}
+			}
+
+			const tokenAddresses = await Promise.all(promises);
+
+			const chainNames = {
+				'1': 'ethereum',
+				'56': 'bsc',
+				'122': 'fuse',
+				'137': 'polygon',
+				'42220': 'celo',
+			};
+
+			return res.map((obj, i) => {
+				obj.token_address = tokenAddresses[i];
+				obj.chain_name = chainNames[obj.chain_id];
+				return obj;
+			});
+		} else {
+			return res;
+		}
+	}
+
+	async getAddressesToEliminate(offeringId: string): Promise<string[]> {
+		console.log(
+			this.constructor.name,
+			this.getAddressesToEliminate.name,
+			'info:',
+			`getting addresses to eliminate with offeringId ${offeringId}`
+		);
+
+		const res = await getParticipantAllocations(offeringId, null);
+		const addressesToEliminate = res
+			.filter((obj: any) => obj.allocationsEligable == 0 && obj.allocationsContributed > 0)
+			.map((obj: any) => obj.address);
+
+		return addressesToEliminate;
+	}
+
+	async eliminate(vestingContract: VestingContract): Promise<void> {
+		const addressesToEliminate = await this.getAddressesToEliminate(vestingContract._id);
+		const provider = getProviderByChainId(Number(vestingContract.chain_id));
+		const shoVestingContractRead = new ethers.Contract(
+			vestingContract.vesting_smart_contract_address,
+			shoVestingAbi,
+			provider
+		);
+		const shoView = new ethers.Contract(shoViewAddress, shoViewAbi, provider);
+		const totalUnlocksCount = await shoVestingContractRead.getTotalUnlocksCount();
+		const passedUnlocksCount = await shoView.getPassedUnlocksCount(vestingContract.vesting_smart_contract_address);
+
+		if (passedUnlocksCount === 0 || passedUnlocksCount >= totalUnlocksCount) {
+			console.log(
+				this.constructor.name,
+				this.eliminate.name,
+				'info:',
+				`vesting ${vestingContract.vesting_smart_contract_address} hasn't started yet or has ended`
+			);
+			return;
+		}
+
+		const options = await shoView.getUserOptions(
+			vestingContract.vesting_smart_contract_address,
+			addressesToEliminate
+		);
+		const eliminated = await shoView.areEliminated(
+			vestingContract.vesting_smart_contract_address,
+			addressesToEliminate
+		);
+		const newAddressesToEliminate = addressesToEliminate.filter(
+			(obj: string, i: number) => options[i] === 1 && eliminated[i] === 0
+		);
+
+		if (newAddressesToEliminate.length === 0) {
+			console.log(
+				this.constructor.name,
+				this.eliminate.name,
+				'info:',
+				'nobody to eliminate ' + `in ${vestingContract.vesting_smart_contract_address}`
+			);
+			return;
+		}
+
+		try {
+			const owner = await shoVestingContractRead.owner();
+			console.log(this.constructor.name, this.eliminate.name, 'info:', `getting pk for the owner: ${owner}`);
+			const signer = await this.getSigner(owner, provider);
+			const shoVestingContract = shoVestingContractRead.connect(signer);
+			const gasPrice = await this.getGasPrice(provider);
+			const gasBalance = ethers.utils.formatEther(await signer.getBalance());
+
+			console.log(
+				this.constructor.name,
+				this.eliminate.name,
+				'info:',
+				`eliminating ${newAddressesToEliminate.length} / ${addressesToEliminate.length} addresses in `,
+				`${vestingContract.vesting_smart_contract_address}, owner: ${owner}, gasBalance: ${gasBalance} `
+			);
+			const tx = await shoVestingContract.eliminateUsers1(newAddressesToEliminate, gasPrice);
+			console.log(this.constructor.name, this.eliminate.name, 'info:', `tx hash: ${tx.hash}`);
+			await tx.wait();
+			console.log(this.constructor.name, this.eliminate.name, 'info:', 'successfully eliminated');
+		} catch (e: any) {
+			console.log(this.constructor.name, this.eliminate.name, 'error:', e.message);
+		}
+	}
+
+	async getGasPrice(provider: ethers.providers.Provider): Promise<any> {
+		const feeData = await provider.getFeeData();
+		if (feeData.maxPriorityFeePerGas && feeData.maxFeePerGas) {
+			const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas.mul(GAS_PRICE_MULTIPLIER_2);
+			const maxFeePerGas = feeData.maxFeePerGas.gt(maxPriorityFeePerGas)
+				? feeData.maxFeePerGas
+				: maxPriorityFeePerGas;
+
+			return {
+				maxFeePerGas,
+				maxPriorityFeePerGas,
+			};
+		} else if (feeData.gasPrice) {
+			return {
+				gasPrice: feeData.gasPrice.mul(GAS_PRICE_MULTIPLIER_1),
+			};
+		}
+	}
+
+	async getSigner(owner: string, provider: ethers.providers.Provider): Promise<ethers.Wallet> {
+		const pk = config[USE_ENV].shoVestingBotPk[owner.toLowerCase()];
+		return new ethers.Wallet(pk, provider);
+	}
+}
