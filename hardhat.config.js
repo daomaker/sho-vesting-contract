@@ -24,6 +24,10 @@ module.exports = {
             url: `https://mainnet.infura.io/v3/${process.env.INFURA_KEY}`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         },
+        bsc: {
+            url: `https://bsc-dataseed.binance.org/`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`],
+        }
     },
     abiExporter: {
         path: './abi',

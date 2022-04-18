@@ -5,3 +5,4 @@ abi
 #Hardhat files
 cache
 artifacts
+args.js
