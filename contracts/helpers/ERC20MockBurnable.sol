@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.0;
 
-import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
+import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol';
 
-contract ERC20MockBurnable is ERC20 {
+contract ERC20MockBurnable is ERC20Burnable {
     uint8 _decimals = 18;
 
     constructor(
@@ -20,9 +20,5 @@ contract ERC20MockBurnable is ERC20 {
 
     function decimals() public view override returns (uint8) {
         return _decimals;
-    }
-
-    function burn(uint256 amount) public virtual {
-        _burn(_msgSender(), amount);
     }
 }

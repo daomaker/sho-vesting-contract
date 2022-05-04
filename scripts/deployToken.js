@@ -1,10 +1,10 @@
 async function main() {
-    const name = "TEST";
-    const symbol = "TEST";
+    const name = "SHO";
+    const symbol = "SHO";
     const initialBalance = 10000000;
     const decimals = 18;
 
-    const Token = await ethers.getContractFactory("ERC20Mock");
+    const Token = await ethers.getContractFactory("ERC20MockBurnable");
     const token = await Token.deploy(
         name,
         symbol,
