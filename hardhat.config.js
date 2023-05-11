@@ -27,6 +27,14 @@ module.exports = {
         bsc: {
             url: `https://bsc-dataseed.binance.org/`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
+        },
+        step: {
+            url: `https://rpc.step.network`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`],
+        },
+        arb: {
+            url: `https://arbitrum-mainnet.infura.io`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`],
         }
     },
     abiExporter: {
