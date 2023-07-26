@@ -41,16 +41,9 @@ async function main() {
         startTime,
         burnValley,
         burnPercentage,
-<<<<<<< HEAD
-        freeClaimablePercentage,
-        gasPrice
-    );
-    await sho.deployed();
-=======
         freeClaimablePercentage
     );
     await sho.deployed()
->>>>>>> master
 
     console.log("SHO deployed at:", sho.address);
 }
