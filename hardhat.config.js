@@ -28,20 +28,12 @@ module.exports = {
             url: `https://bsc-dataseed.binance.org/`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         },
-        celo: {
-            url: `https://forno.celo.org/`,
+        step: {
+            url: `https://rpc.step.network`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         },
-        polygon: {
-            url: `https://polygon-rpc.com/`,
-            accounts: [`0x${process.env.PRIVATE_KEY}`],
-        },
-        avatest: {
-            url: `https://api.avax-test.network/ext/bc/C/rpc`,
-            accounts: [`0x${process.env.PRIVATE_KEY}`],
-        },
-        ava: {
-            url: `https://api.avax.network/ext/bc/C/rpc`,
+        arb: {
+            url: `https://arbitrum-mainnet.infura.io`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         }
     },

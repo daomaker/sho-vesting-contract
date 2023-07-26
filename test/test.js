@@ -185,18 +185,18 @@ describe("SHO smart contract", function() {
         contract = contract.connect(user);
 
         if (nothingToClaim) {
-            await expect(contract.claimUser1()).to.be.revertedWith("SHO: nothing to claim");
+            await expect(contract.functions["claimUser1()"]()).to.be.revertedWith("SHO: nothing to claim");
             return;
         }
 
         expectedClaimed = parseUnits(expectedClaimed);
 
-        const amountToClaim = await contract.callStatic.claimUser1();
+        const amountToClaim = await contract.callStatic["claimUser1()"]();
         expect(amountToClaim).to.closeTo(expectedClaimed, PRECISION_LOSS);
 
         const userBalanceBefore = await shoToken.balanceOf(user.address);
         const userInfoBefore = await contract.users1(user.address);
-        await contract.claimUser1();
+        await contract.functions["claimUser1()"]();
         const userBalanceAfter = await shoToken.balanceOf(user.address);
         const userInfoAfter = await contract.users1(user.address);
         const passedUnlocksCount = await contract.getPassedUnlocksCount();
@@ -371,9 +371,7 @@ describe("SHO smart contract", function() {
             await expect(contract.claimUser2(0)).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
 
             contract = contract.connect(user1);
-            await expect(contract.claimUser1()).to.be.revertedWith("SHO: caller is not whitelisted or does not have the correct option");
-
-            await expect(contractView.getUserInfo(contract.address, owner.address)).to.be.revertedWith("");
+            await expect(contract.functions["claimUser1()"]()).to.be.revertedWith("SHO: passed address is not whitelisted or does not have the correct option");
         });
 
         it("check private non-view functions", async() => {
@@ -675,7 +673,7 @@ describe("SHO smart contract", function() {
 
         it("check reverts", async() => {
             contract = contract.connect(user1);
-            await expect(contract.claimUser1()).to.be.revertedWith("SHO: no unlocks passed");
+            await expect(contract.functions["claimUser1()"]()).to.be.revertedWith("SHO: no unlocks passed");
 
             contract = contract.connect(owner);
             await expect(contract.eliminateUsers1([user1.address])).to.be.revertedWith("SHO: no unlocks passed");

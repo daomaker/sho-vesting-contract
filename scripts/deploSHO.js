@@ -1,19 +1,35 @@
 const { getGasPrice } = require("./utils.js");
 
 async function main() {
-    const shoToken = "0x18Dbf59AA9a879a16B6c87d6549731d9dD032b7F";
-    const feeCollector = "0xcF28556EE95Be8c52AD2f3480149128cCA51daC1";
-    const unlockPercentagesDiff = new Array(100).fill(10000);
-    const unlockPeriodsDiff = [0].concat(new Array(99).fill(1800));
-    const startTime = Math.round(Date.now() / 1000) + 100;
+    const shoToken = "0xc97d6C52F3ADD91Fa1c5287a453d7444aECBca83";//"0x02c3296C6eb50249f290AE596F2bE9454bFfadaB";
+    const feeCollector = "0x9Bb4B952D576Dcc7f58797C909b0f4e8c14aE51D";//"0x9Bb4B952D576Dcc7f58797C909b0f4e8c14aE51D"
+    /*const unlockPercentagesDiff = new Array(100).fill(10000);
+    const unlockPeriodsDiff = [0].concat(new Array(99).fill(3600));
+    const startTime = Math.round(Date.now() / 1000) + 100;*/
 
-    const baseFeePercentage1 = 200000;
-    const baseFeePercentage2 = 300000;
-    const burnValley = "0xb956f28f02ACE969A3e77667E3F5Ee3089B2B06f";
+    const unlockPercentagesDiff = [350000, 928] 
+    const unlockPeriodsDiff = [0, 2678400]
+    const startTime = 1678961400
+
+    const days = 700
+    const dailyPercentage = 928
+
+    let dailySum = 0
+    for (let i = 0; i < days; i++) {
+        unlockPercentagesDiff.push(dailyPercentage)
+        unlockPeriodsDiff.push(86400)
+        dailySum += dailyPercentage
+    }
+
+
+    unlockPercentagesDiff[unlockPercentagesDiff.length - 1] = 650000 - dailySum
+
+    const baseFeePercentage1 = 0;
+    const baseFeePercentage2 = 0;
+    const burnValley = "0x000000000000000000000000000000000000dead";
     const burnPercentage = 0;
-    const freeClaimablePercentage = 300000;
+    const freeClaimablePercentage = 1000000;
 
-    const gasPrice = await getGasPrice();
     const SHO = await ethers.getContractFactory("SHO");
     const sho = await SHO.deploy(
         shoToken,
@@ -25,10 +41,16 @@ async function main() {
         startTime,
         burnValley,
         burnPercentage,
+<<<<<<< HEAD
         freeClaimablePercentage,
         gasPrice
     );
     await sho.deployed();
+=======
+        freeClaimablePercentage
+    );
+    await sho.deployed()
+>>>>>>> master
 
     console.log("SHO deployed at:", sho.address);
 }
