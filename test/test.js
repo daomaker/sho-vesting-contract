@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO smart contract", function() {
-    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, burnValley, contractView;
+    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, contractView;
 
     const PRECISION_LOSS = "10000000000000000";
     
@@ -59,9 +59,6 @@ describe("SHO smart contract", function() {
         const startTime = Number(await time.latest()) + 300;
         const ERC20Mock = await ethers.getContractFactory(shoTokenBurnable ? "ERC20MockBurnable" : "ERC20Mock");
         shoToken = await ERC20Mock.deploy("MOCK1", "MOCK1", owner.address, parseUnits(100000000), shoTokenDecimals);
-
-        const BurnValley = await ethers.getContractFactory("BurnValley");
-        burnValley = await BurnValley.deploy();
         
         const Factory = await ethers.getContractFactory("SHOVestingFactory");
         const factory = await Factory.deploy();
@@ -78,6 +75,15 @@ describe("SHO smart contract", function() {
         const Contract = await ethers.getContractFactory("SHOVesting");
         contract = await Contract.attach(await factory.callStatic.deploy(params, "0x"));
         await factory.deploy(params, "0x");
+
+        await expect(contract.init(
+            params.shoToken,
+            params.unlockPercentagesDiff,
+            params.unlockPeriodsDiff,
+            params.baseFeePercentage1,
+            params.feeCollector,
+            params.startTime
+        )).to.be.revertedWith("Initializable");
 
         expect(await contract.shoToken()).to.equal(shoToken.address);
         expect(await contract.startTime()).to.equal(startTime);
