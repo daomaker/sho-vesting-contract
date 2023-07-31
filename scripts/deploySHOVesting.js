@@ -1,8 +1,6 @@
-const { getGasPrice } = require("./utils.js");
-
 async function main() {
-    const shoToken = "0xc97d6C52F3ADD91Fa1c5287a453d7444aECBca83";//"0x02c3296C6eb50249f290AE596F2bE9454bFfadaB";
-    const feeCollector = "0x9Bb4B952D576Dcc7f58797C909b0f4e8c14aE51D";//"0x9Bb4B952D576Dcc7f58797C909b0f4e8c14aE51D"
+    const shoToken = "";
+    const feeCollector = "";
     /*const unlockPercentagesDiff = new Array(100).fill(10000);
     const unlockPeriodsDiff = [0].concat(new Array(99).fill(3600));
     const startTime = Math.round(Date.now() / 1000) + 100;*/
@@ -21,31 +19,23 @@ async function main() {
         dailySum += dailyPercentage
     }
 
-
     unlockPercentagesDiff[unlockPercentagesDiff.length - 1] = 650000 - dailySum
 
     const baseFeePercentage1 = 0;
-    const baseFeePercentage2 = 0;
-    const burnValley = "0x000000000000000000000000000000000000dead";
-    const burnPercentage = 0;
-    const freeClaimablePercentage = 1000000;
 
-    const SHO = await ethers.getContractFactory("SHO");
-    const sho = await SHO.deploy(
+    const SHOVesting = await ethers.getContractFactory("SHOVesting");
+    const shoVesting = await SHOVesting.deploy();
+    await shoVesting.deployed();
+    await shoVesting.init({
         shoToken,
         unlockPercentagesDiff,
         unlockPeriodsDiff,
         baseFeePercentage1,
-        baseFeePercentage2,
         feeCollector,
-        startTime,
-        burnValley,
-        burnPercentage,
-        freeClaimablePercentage
-    );
-    await sho.deployed()
+        startTime
+    });
 
-    console.log("SHO deployed at:", sho.address);
+    console.log("SHOVesting deployed at:", shoVesting.address);
 }
 
 main()

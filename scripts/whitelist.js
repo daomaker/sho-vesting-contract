@@ -1,5 +1,3 @@
-const { getGasPrice } = require("./utils.js");
-
 const userAddresses = require("./whitelistAddresses.json");
 const allocations = require("./whitelistAllocations.json");
 if (userAddresses.length != allocations.length) throw new Error("lengths dont match");
@@ -7,9 +5,7 @@ if (userAddresses.length != allocations.length) throw new Error("lengths dont ma
 const BATCH_SIZE = 1000;
 
 async function main() {
-    const SHOaddress = "0x7fdf19AA8e0821f2ef5EaEA44F73c904722cf674";
-    const options = new Array(allocations.length).fill(1);
-
+    const SHOaddress = "";
 
     const SHO = await ethers.getContractFactory("SHO");
     const sho = await SHO.attach(SHOaddress);
@@ -20,7 +16,7 @@ async function main() {
     const decimals = await shoToken.decimals();
 
     const batches = Math.ceil(userAddresses.length / BATCH_SIZE);
-    for (let i = 14; i < batches; i++) {
+    for (let i = 0; i < batches; i++) {
 
         const gasData = await sho.provider.getFeeData()
         const txOptions = {
@@ -32,7 +28,6 @@ async function main() {
         const tx = await sho.whitelistUsers(
             userAddresses.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
             allocations.map(notParsed => ethers.utils.parseUnits(notParsed.toFixed(decimals), decimals)).slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
-            options.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
             i == batches - 1,
             txOptions
         );

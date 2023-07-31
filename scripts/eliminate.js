@@ -26,13 +26,12 @@ async function main() {
 	}
 
     const vestingContractAddresses = [
-        "0x4ee492722c42029d076bc7038a03b58687a79f69"
+        ""
     ];
 
     for (const shoContractAddress of vestingContractAddresses) {
         const addressesToEliminate = [
-            "0x0dee0995229aecf7311bdea6eb501b648ce6527f",
-            "0xb4ebd77aa6ca5a58b0e9b766fc334537f5a2c878"
+            "",
         ];
 
         const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
