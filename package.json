@@ -10,6 +10,7 @@
   "license": "ISC",
   "devDependencies": {
     "@nomiclabs/hardhat-ethers": "^2.0.2",
+    "@nomiclabs/hardhat-etherscan": "^3.0.3",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
     "@nomiclabs/hardhat-web3": "^2.0.0",
     "@openzeppelin/test-helpers": "^0.5.13",
@@ -19,10 +20,11 @@
     "ethers": "^5.4.7",
     "hardhat": "^2.6.4",
     "hardhat-abi-exporter": "^2.3.0",
-    "hardhat-gas-reporter": "^1.0.4",
-    "@nomiclabs/hardhat-etherscan": "^2.1.7"
+    "hardhat-gas-reporter": "^1.0.4"
   },
   "dependencies": {
-    "@openzeppelin/contracts": "^4.3.2"
+    "@openzeppelin/contracts": "^4.3.2",
+    "@openzeppelin/contracts-upgradeable": "^4.9.2",
+    "solidity-coverage": "^0.8.4"
   }
 }

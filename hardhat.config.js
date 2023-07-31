@@ -4,6 +4,7 @@ require("@nomiclabs/hardhat-web3");
 require("hardhat-gas-reporter");
 require("hardhat-abi-exporter");
 require("@nomiclabs/hardhat-etherscan");
+require("solidity-coverage");
 
 module.exports = {
     solidity: {
@@ -24,6 +25,18 @@ module.exports = {
             url: `https://mainnet.infura.io/v3/${process.env.INFURA_KEY}`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         },
+        bsc: {
+            url: `https://bsc-dataseed.binance.org/`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`],
+        },
+        step: {
+            url: `https://rpc.step.network`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`],
+        },
+        arb: {
+            url: `https://arbitrum-mainnet.infura.io`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`],
+        }
     },
     abiExporter: {
         path: './abi',
