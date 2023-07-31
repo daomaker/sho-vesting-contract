@@ -1,31 +1,12 @@
 //SPDX-License-Identifier: MIT
 pragma solidity =0.8.4;
 
-import "./SHO.sol";
-import "hardhat/console.sol";
+import "./SHOVesting.sol";
 
 contract SHOView {
     uint32 constant HUNDRED_PERCENT = 1e6;
 
-    struct User1 {
-        uint16 claimedUnlocksCount;
-        uint16 eliminatedAfterUnlock;
-        uint120 allocation;
-    }
-
-    struct User2 {
-        uint120 allocation;
-        uint120 debt;
-
-        uint16 claimedUnlocksCount;
-        uint120 currentUnlocked;
-        uint120 currentClaimed;
-
-        uint120 totalUnlocked;
-        uint120 totalClaimed;
-    }
-
-    function _loadUser1(SHO shoContract, address userAddress) private view returns (User1 memory user) {
+    function _loadUser1(SHOVesting shoContract, address userAddress) private view returns (SHOVesting.User memory user) {
         (
             uint16 claimedUnlocksCount,
             uint16 eliminatedAfterUnlock,
@@ -37,44 +18,20 @@ contract SHOView {
         user.allocation = allocation;
     }
 
-    function _loadUser2(SHO shoContract, address userAddress) private view returns (User2 memory user) {
-        (
-            uint120 allocation,
-            uint120 debt,
-            uint16 claimedUnlocksCount,
-            uint120 currentUnlocked,
-            uint120 currentClaimed,
-            uint120 totalUnlocked,
-            uint120 totalClaimed
-        ) = shoContract.users2(userAddress);
-
-        user.allocation = allocation;
-        user.debt = debt;
-        user.claimedUnlocksCount = claimedUnlocksCount;
-        user.currentUnlocked = currentUnlocked;
-        user.currentClaimed = currentClaimed;
-        user.totalUnlocked = totalUnlocked;
-        user.totalClaimed = totalClaimed;
-    }
-
-    function getUserOption(SHO shoContract, address userAddress) public view returns (uint8 userOption) {
+    function getUserOption(SHOVesting shoContract, address userAddress) public view returns (uint8 userOption) {
         if (_loadUser1(shoContract, userAddress).allocation > 0) {
             userOption = 1;
-        } else {
-            if (_loadUser2(shoContract, userAddress).allocation > 0) {
-                userOption = 2;
-            }
         }
     }
 
-    function getUserOptions(SHO shoContract, address[] calldata userAddresses) public view returns (uint8[] memory userOptions) {
+    function getUserOptions(SHOVesting shoContract, address[] calldata userAddresses) public view returns (uint8[] memory userOptions) {
         userOptions = new uint8[](userAddresses.length);
         for (uint256 i = 0; i < userAddresses.length; i++) {
             userOptions[i] = getUserOption(shoContract, userAddresses[i]);
         }
     }
 
-    function areEliminated(SHO shoContract, address[] calldata userAddresses) public view returns (uint16[] memory eliminated) {
+    function areEliminated(SHOVesting shoContract, address[] calldata userAddresses) public view returns (uint16[] memory eliminated) {
         eliminated = new uint16[](userAddresses.length);
         for (uint256 i = 0; i < userAddresses.length; i++) {
             (, uint16 eliminatedAfterUnlock,) = shoContract.users1(userAddresses[i]);
@@ -82,14 +39,14 @@ contract SHOView {
         }
     }
 
-    function getPassedUnlocksCount(SHO shoContract) public view returns (uint16 passedUnlocksCount) {
+    function getPassedUnlocksCount(SHOVesting shoContract) public view returns (uint16 passedUnlocksCount) {
         if (shoContract.startTime() <= block.timestamp) {
             passedUnlocksCount = shoContract.getPassedUnlocksCount();
         }
     }
 
     function getUserInfo(
-        SHO shoContract, 
+        SHOVesting shoContract, 
         address userAddress
     ) public view returns (
         uint120 totalUnlocked,
@@ -113,7 +70,7 @@ contract SHOView {
         }
     }
 
-    function getUserTotalUnlocked(SHO shoContract, address userAddress) public view returns (uint120 totalUnlocked) {
+    function getUserTotalUnlocked(SHOVesting shoContract, address userAddress) public view returns (uint120 totalUnlocked) {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
@@ -121,49 +78,33 @@ contract SHOView {
         if (passedUnlocksCount == 0) return 0;
         uint16 currentUnlock = passedUnlocksCount - 1;
 
-        if (userOption == 1) {
-            User1 memory user = _loadUser1(shoContract, userAddress);
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
 
-            if (user.eliminatedAfterUnlock > 0) {
-                currentUnlock = user.eliminatedAfterUnlock - 1;
-            }
-
-            totalUnlocked = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock));
-            totalUnlocked = _applyBaseFee(shoContract, totalUnlocked, 1);
-        } else if (userOption == 2) {
-            User2 memory user = _loadUser2(shoContract, userAddress);
-
-            if (user.claimedUnlocksCount == passedUnlocksCount) {
-                totalUnlocked = user.totalUnlocked;
-            } else {
-                _updateUserCurrent(shoContract, user, currentUnlock);
-                totalUnlocked = user.totalUnlocked;
-            }
+        if (user.eliminatedAfterUnlock > 0) {
+            currentUnlock = user.eliminatedAfterUnlock - 1;
         }
+
+        totalUnlocked = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock));
+        totalUnlocked = _applyBaseFee(shoContract, totalUnlocked);
     }
 
-    function getUserTotalClaimed(SHO shoContract, address userAddress) public view returns (uint120 totalClaimed) {
+    function getUserTotalClaimed(SHOVesting shoContract, address userAddress) public view returns (uint120 totalClaimed) {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
         uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
         if (passedUnlocksCount == 0) return 0;
 
-        if (userOption == 1) {
-            User1 memory user = _loadUser1(shoContract, userAddress);
-            if (user.claimedUnlocksCount > 0) {
-                totalClaimed = _applyPercentage(user.allocation, shoContract.unlockPercentages(user.claimedUnlocksCount - 1));
-                totalClaimed = _applyBaseFee(shoContract, totalClaimed, 1);
-            } else {
-                totalClaimed = 0;
-            }
-        } else if (userOption == 2) {
-            User2 memory user = _loadUser2(shoContract, userAddress);
-            totalClaimed = user.totalClaimed;
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.claimedUnlocksCount > 0) {
+            totalClaimed = _applyPercentage(user.allocation, shoContract.unlockPercentages(user.claimedUnlocksCount - 1));
+            totalClaimed = _applyBaseFee(shoContract, totalClaimed);
+        } else {
+            totalClaimed = 0;
         }
     }
 
-    function getUserUpcomingClaimable(SHO shoContract, address userAddress) public view returns (uint120 upcomingClaimable) {
+    function getUserUpcomingClaimable(SHOVesting shoContract, address userAddress) public view returns (uint120 upcomingClaimable) {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
@@ -171,27 +112,16 @@ contract SHOView {
         if (passedUnlocksCount == shoContract.getTotalUnlocksCount()) return 0;
         uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
 
-        if (userOption == 1) {
-            User1 memory user = _loadUser1(shoContract, userAddress);
-            if (user.eliminatedAfterUnlock > 0) {
-                upcomingClaimable = 0;
-            } else {
-                upcomingClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(passedUnlocksCount) - currentUnlockPercentage);
-                upcomingClaimable = _applyBaseFee(shoContract, upcomingClaimable, 1);
-            }
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.eliminatedAfterUnlock > 0) {
+            upcomingClaimable = 0;
         } else {
-            User2 memory user = _loadUser2(shoContract, userAddress);
-            if (user.claimedUnlocksCount < passedUnlocksCount) {
-                _updateUserCurrent(shoContract, user, passedUnlocksCount - 1);
-            }
-
-            uint120 totalUnlockedPrev = user.totalUnlocked;
-            _updateUserCurrent(shoContract, user, passedUnlocksCount);
-            return user.totalUnlocked - totalUnlockedPrev;
+            upcomingClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(passedUnlocksCount) - currentUnlockPercentage);
+            upcomingClaimable = _applyBaseFee(shoContract, upcomingClaimable);
         }
     }
 
-    function getUserVested(SHO shoContract, address userAddress) public view returns (uint120 vested) {
+    function getUserVested(SHOVesting shoContract, address userAddress) public view returns (uint120 vested) {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
@@ -199,31 +129,16 @@ contract SHOView {
         if (passedUnlocksCount == shoContract.getTotalUnlocksCount()) return 0;
         uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
         
-        if (userOption == 1) {
-            User1 memory user = _loadUser1(shoContract, userAddress);
-            if (user.eliminatedAfterUnlock > 0) {
-                vested = 0;
-            } else {
-                vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - currentUnlockPercentage);
-                vested = _applyBaseFee(shoContract, vested, 1);
-            }
-        } else if (userOption == 2) {
-            User2 memory user = _loadUser2(shoContract, userAddress);
-            if (user.claimedUnlocksCount < passedUnlocksCount) {
-                _updateUserCurrent(shoContract, user, passedUnlocksCount - 1);
-            }
-           
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.eliminatedAfterUnlock > 0) {
+            vested = 0;
+        } else {
             vested = _applyPercentage(user.allocation, HUNDRED_PERCENT - currentUnlockPercentage);
-            vested = _applyBaseFee(shoContract, vested, 2);
-            if (vested >= user.debt) {
-                vested -= user.debt;
-            } else {
-                vested = 0;
-            }
+            vested = _applyBaseFee(shoContract, vested);
         }
     }
 
-    function getUserMinClaimable(SHO shoContract, address userAddress) public view returns (uint120 minClaimable) {
+    function getUserMinClaimable(SHOVesting shoContract, address userAddress) public view returns (uint120 minClaimable) {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
 
@@ -231,111 +146,30 @@ contract SHOView {
         if (passedUnlocksCount == 0) return 0;
         uint16 currentUnlock = passedUnlocksCount - 1;
 
-        if (userOption == 1) {
-            User1 memory user = _loadUser1(shoContract, userAddress);
-            uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
-            currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
-            minClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
-            minClaimable = _applyBaseFee(shoContract, minClaimable, 1);
-        } else if (userOption == 2) {
-            User2 memory user = _loadUser2(shoContract, userAddress);
-            if (user.claimedUnlocksCount == passedUnlocksCount) {
-                minClaimable = 0;
-            } else {
-                minClaimable = _updateUserCurrent(shoContract, user, currentUnlock);
-                minClaimable += _getCurrentBaseClaimAmount(shoContract, user, currentUnlock);
-            }
-        }
-    }
-
-    function getUserMaxClaimable(SHO shoContract, address userAddress) public view returns (uint120 maxClaimable) {
-        uint8 userOption = getUserOption(shoContract, userAddress);
-        require(userOption != 0);
-
-        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
-        if (passedUnlocksCount == 0) return 0;
-        uint16 currentUnlock = passedUnlocksCount - 1;
-
-        if (userOption == 1) {
-            User1 memory user = _loadUser1(shoContract, userAddress);
-            uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
-            currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
-            maxClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
-            maxClaimable = _applyBaseFee(shoContract, maxClaimable, 1);
-        } else if (userOption == 2) {
-            User2 memory user = _loadUser2(shoContract, userAddress);
-            if (user.claimedUnlocksCount == passedUnlocksCount) {
-                maxClaimable= user.currentUnlocked - user.currentClaimed;
-            } else {
-                maxClaimable = _updateUserCurrent(shoContract, user, currentUnlock);
-                uint120 baseClaimAmount = _getCurrentBaseClaimAmount(shoContract, user, currentUnlock);
-                maxClaimable += baseClaimAmount;
-                user.currentClaimed += baseClaimAmount;
-                maxClaimable += user.currentUnlocked - user.currentClaimed;
-            }
-        }
-    }
-
-    function _updateUserCurrent(SHO shoContract, User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
-        claimableFromPreviousUnlocks = _getClaimableFromPreviousUnlocks(shoContract, user, currentUnlock);
-
-        uint120 newUnlocked = claimableFromPreviousUnlocks - (user.currentUnlocked - user.currentClaimed);
-
-        uint32 unlockPercentageDiffCurrent = currentUnlock > 0 ?
-            shoContract.unlockPercentages(currentUnlock) - shoContract.unlockPercentages(currentUnlock - 1) : shoContract.unlockPercentages(currentUnlock);
-
-        uint120 currentUnlocked = _applyPercentage(user.allocation, unlockPercentageDiffCurrent);
-        currentUnlocked = _applyBaseFee(shoContract, currentUnlocked, 2);
-
-        newUnlocked += currentUnlocked;
-        if (newUnlocked >= user.debt) {
-            newUnlocked -= user.debt;
-        } else {
-            newUnlocked = 0;
-        }
-
-        if (claimableFromPreviousUnlocks >= user.debt) {
-            claimableFromPreviousUnlocks -= user.debt;
-            user.debt = 0;
-        } else {
-            user.debt -= claimableFromPreviousUnlocks;
-            claimableFromPreviousUnlocks = 0;
-        }
-
-        if (currentUnlocked >= user.debt) {
-            currentUnlocked -= user.debt;
-            user.debt = 0;
-        } else {
-            user.debt -= currentUnlocked;
-            currentUnlocked = 0;
-        }
-        
-        user.totalUnlocked += newUnlocked;
-        user.currentUnlocked = currentUnlocked;
-        user.currentClaimed = 0;
-        user.claimedUnlocksCount = currentUnlock + 1;
-    }
-
-    function _getClaimableFromPreviousUnlocks(SHO shoContract, User2 memory user, uint16 currentUnlock) private view returns (uint120 claimableFromPreviousUnlocks) {
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
-        uint32 previousUnlockPercentage = currentUnlock > 0 ? shoContract.unlockPercentages(currentUnlock - 1) : 0;
-        uint120 claimableFromMissedUnlocks = _applyPercentage(user.allocation, previousUnlockPercentage - lastUnlockPercentage);
-        claimableFromMissedUnlocks = _applyBaseFee(shoContract, claimableFromMissedUnlocks, 2);
-        
-        claimableFromPreviousUnlocks = user.currentUnlocked - user.currentClaimed;
-        claimableFromPreviousUnlocks += claimableFromMissedUnlocks;
+        currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
+        minClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
+        minClaimable = _applyBaseFee(shoContract, minClaimable);
     }
 
-    function _getCurrentBaseClaimAmount(SHO shoContract, User2 memory user, uint16 currentUnlock) private view returns (uint120 baseClaimAmount) {
-        if (currentUnlock < shoContract.getTotalUnlocksCount() - 1) {
-            baseClaimAmount = _applyPercentage(user.currentUnlocked, shoContract.freeClaimablePercentage());
-        } else {
-            baseClaimAmount = user.currentUnlocked;
-        }
+    function getUserMaxClaimable(SHOVesting shoContract, address userAddress) public view returns (uint120 maxClaimable) {
+        uint8 userOption = getUserOption(shoContract, userAddress);
+        require(userOption != 0);
+
+        uint16 passedUnlocksCount = getPassedUnlocksCount(shoContract);
+        if (passedUnlocksCount == 0) return 0;
+        uint16 currentUnlock = passedUnlocksCount - 1;
+
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
+        currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
+        maxClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
+        maxClaimable = _applyBaseFee(shoContract, maxClaimable);
     }
 
-    function _applyBaseFee(SHO shoContract, uint120 value, uint8 option) private view returns (uint120) {
-        return value - _applyPercentage(value, option == 1 ? shoContract.baseFeePercentage1() : shoContract.baseFeePercentage2());
+    function _applyBaseFee(SHOVesting shoContract, uint120 value) private view returns (uint120) {
+        return value - _applyPercentage(value, shoContract.baseFeePercentage1());
     }
 
     function _applyPercentage(uint120 value, uint32 percentage) private pure returns (uint120) {

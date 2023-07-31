@@ -4,6 +4,7 @@ require("@nomiclabs/hardhat-web3");
 require("hardhat-gas-reporter");
 require("hardhat-abi-exporter");
 require("@nomiclabs/hardhat-etherscan");
+require("solidity-coverage");
 
 module.exports = {
     solidity: {
