@@ -1,10 +1,8 @@
 //SPDX-License-Identifier: MIT
 pragma solidity =0.8.4;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -14,11 +12,13 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using SafeERC20 for IERC20;
 
     uint32 constant internal HUNDRED_PERCENT = 1e6;
+    uint32 constant internal REFUND_PERIOD_DURATION = 86400 * 3;
 
     struct User {
         uint16 claimedUnlocksCount;
         uint16 eliminatedAfterUnlock;
         uint120 allocation;
+        bool refunded;
     }
 
     mapping(address => User) public users1;
@@ -30,39 +30,52 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint64 public startTime;
     address public feeCollector;
     uint32 public baseFeePercentage1;
+
+    IERC20 refundToken;
+    uint64 refundAfter;
+    address refundReceiver;
+
     bool public whitelistingAllowed;
+    bool public refundCompleted;
+    uint16 public remainingUsersToRefund;
 
     uint16 passedUnlocksCount;
     uint120 public globalTotalAllocation1;
+    uint120 public totalRefundedAllocation;
 
     uint16 public collectedFeesUnlocksCount;
     uint120 public extraFees1Allocation;
     uint120 public extraFees1AllocationUncollectable;
 
-    event Whitelist (
+    event Whitelist(
         address user,
         uint120 allocation
     );
 
-    event Claim (
+    event Claim(
         address indexed user,
         uint16 currentUnlock,
         uint120 claimedTokens
     );
 
-    event FeeCollection (
+    event FeeCollection(
         uint16 currentUnlock,
         uint120 totalFee,
         uint120 extraFee
     );
 
-    event UserElimination (
+    event UserElimination(
         address user,
         uint16 currentUnlock
     );
 
-    event Update (
+    event Update(
         uint16 passedUnlocksCount
+    );
+
+    event Refund(
+        address user,
+        uint refundAmount
     );
 
     modifier onlyWhitelistedUser(address userAddress) {
@@ -73,11 +86,14 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     /**
      * @notice Initializes contract.
      * @param _shoToken The vesting token that whitelisted users can claim.
-     * @param _unlockPercentagesDiff Array of unlock percentages as differentials
+     * @param _unlockPercentagesDiff Array of unlock percentages as differentials.
      * @param _unlockPeriodsDiff Array of unlock periods as differentials.
      * @param _baseFeePercentage1 Base fee in percentage for users.
      * @param _feeCollector EOA that receives fees.
      * @param _startTime When users can start claiming.
+     * @param _refundToken Refund token address.
+     * @param _refundAfter Relative time since start time.
+     * @param _refundReceiver Address receiving refunded tokens.
      */
     function init(
         IERC20 _shoToken,
@@ -85,7 +101,11 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint32[] memory _unlockPeriodsDiff,
         uint32 _baseFeePercentage1,
         address _feeCollector,
-        uint64 _startTime
+        uint64 _startTime,
+        
+        IERC20 _refundToken,
+        uint64 _refundAfter,
+        address _refundReceiver
     ) external initializer {
         __ReentrancyGuard_init();
         __Ownable_init();
@@ -101,12 +121,17 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint32[] memory _unlockPeriods = _buildArraySum(_unlockPeriodsDiff);
         require(_unlockPercentages[_unlockPercentages.length - 1] == HUNDRED_PERCENT, "SHOVesting: invalid unlock percentages");
 
+        require(_refundAfter <= 86400 * 31, "SHOVesting: refund after too far");
+
         shoToken = _shoToken;
         unlockPercentages = _unlockPercentages;
         unlockPeriods = _unlockPeriods;
         baseFeePercentage1 = _baseFeePercentage1;
         feeCollector = _feeCollector;
         startTime = _startTime;
+        refundToken = _refundToken;
+        refundAfter = _refundAfter;
+        refundReceiver = _refundReceiver;
 
         whitelistingAllowed = true;
     }
@@ -127,8 +152,9 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(userAddresses.length == allocations.length, "SHOVesting: different array lengths");
 
         uint120 _globalTotalAllocation1;
-        uint120 _globalTotalAllocation2;
-        for (uint256 i = 0; i < userAddresses.length; i++) {
+        uint16 _remainingUsersToRefund;
+
+        for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
             if (userAddress == feeCollector) {
                 globalTotalAllocation1 += allocations[i];
@@ -136,18 +162,17 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                 continue;
             }
 
-            require(users1[userAddress].allocation == 0, "SHOVesting: some users are already whitelisted");
+            require(users1[userAddress].allocation == 0, "SHOVesting: already whitelisted");
 
             users1[userAddress].allocation = allocations[i];
             _globalTotalAllocation1 += allocations[i];
+            _remainingUsersToRefund++;
 
-            emit Whitelist(
-                userAddresses[i],
-                allocations[i]
-            );
+            emit Whitelist(userAddresses[i], allocations[i]);
         }
             
         globalTotalAllocation1 += _globalTotalAllocation1;
+        remainingUsersToRefund += _remainingUsersToRefund;
         
         if (last) {
             whitelistingAllowed = false;
@@ -165,6 +190,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         User memory user = users1[userAddress];
         require(passedUnlocksCount > 0, "SHOVesting: no unlocks passed");
         require(user.claimedUnlocksCount < passedUnlocksCount, "SHOVesting: nothing to claim");
+        require(!user.refunded, "SHOVesting: refunded");
 
         uint16 currentUnlock = passedUnlocksCount - 1;
         if (user.eliminatedAfterUnlock > 0) {
@@ -183,9 +209,47 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         emit Claim(userAddress, currentUnlock, amountToClaim);
     }
 
+    /**
+     * @notice Sender claims tokens.
+     */
     function claimUser1() external returns (uint120 amountToClaim) {
         return claimUser1(msg.sender);
     }
+
+    /**
+     * @notice All users that haven't claimed tokens shall get refunded.
+     * @dev Anybody can call this function.
+     * @param userAddresses User addresses to be refunded (all that haven't claimed).
+     */
+    function refund(address[] calldata userAddresses) external nonReentrant {
+        update();
+
+        uint refundAt = startTime + refundAfter;
+        require(block.timestamp >= refundAt && block.timestamp <= refundAt + REFUND_PERIOD_DURATION, "SHOVesting: no refund period");
+
+        for (uint256 i; i < userAddresses.length; i++) {
+            address userAddress = userAddresses[i];
+            User memory user = users1[userAddress];
+
+            if (
+                user.claimedUnlocksCount == 0 &&
+                user.eliminatedAfterUnlock == 0 &&
+                !user.refunded
+            ) {
+                totalRefundedAllocation += user.allocation;
+                globalTotalAllocation1 -= user.allocation;
+
+                uint refundAmount = 0;
+
+                shoToken.transfer(refundReceiver, user.allocation);
+                refundToken.transfer(userAddress, refundAmount);
+
+                user.refunded = true;
+                emit Refund(userAddress, refundAmount);
+            }
+        }
+    }
+
 
     /**
      * @notice Removes all the future allocation of passed user addresses.
@@ -197,12 +261,14 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(passedUnlocksCount > 0, "SHOVesting: no unlocks passed");
         uint16 currentUnlock = passedUnlocksCount - 1;
         require(currentUnlock < unlockPeriods.length - 1, "SHOVesting: eliminating in the last unlock");
+        require(refundCompleted, "SHOVesting: refund period");
 
-        for (uint256 i = 0; i < userAddresses.length; i++) {
+        for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
             User memory user = users1[userAddress];
-            require(user.allocation > 0, "SHOVesting: some user not option 1");
-            require(user.eliminatedAfterUnlock == 0, "SHOVesting: some user already eliminated");
+            require(user.allocation > 0, "SHOVesting: not whitelisted");
+            require(!user.refunded, "SHOVesting: refunded");
+            require(user.eliminatedAfterUnlock == 0, "SHOVesting: already eliminated");
 
             uint120 userAllocation = _applyBaseFee(user.allocation);
             uint120 uncollectable = _applyPercentage(userAllocation, unlockPercentages[currentUnlock]);
@@ -219,6 +285,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
      * @notice Claims fees from all users.
      * @dev The fees are collectable not depedning on if users are claiming.
      * @dev Anybody can call this but the fees go to the fee collector.
+     * @dev If some users get refunded after collecting fees, the fee collector is responsible for rebalancing.
      */ 
     function collectFees() external nonReentrant returns (uint120 baseFee, uint120 extraFee) {
         update();
@@ -236,11 +303,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint120 totalFee = baseFee + extraFee;
         collectedFeesUnlocksCount = currentUnlock + 1;
         shoToken.safeTransfer(feeCollector, totalFee);
-        emit FeeCollection(
-            currentUnlock,
-            totalFee,
-            extraFee
-        );
+        emit FeeCollection(currentUnlock, totalFee, extraFee);
     }
 
     /**  
@@ -285,7 +348,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint256 len = diffArray.length;
         uint32[] memory sumArray = new uint32[](len);
         uint32 lastSum = 0;
-        for (uint256 i = 0; i < len; i++) {
+        for (uint256 i; i < len; i++) {
             if (i > 0) {
                 lastSum = sumArray[i - 1];
             }
