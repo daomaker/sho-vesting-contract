@@ -30,8 +30,8 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         address feeCollector; // EOA that receives fees.
         uint64 startTime; // When users can start claiming.
         IERC20 refundToken; // Refund token address.
-        uint64 refundAfter; // Relative time since start time.
         address refundReceiver; // Address receiving refunded tokens.
+        uint64 refundAfter; // Relative time since start time.
         uint120 refundPrice; // Exchange rate between refund token and vesting token.
     }
 
@@ -46,8 +46,8 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint32 public baseFeePercentage1;
 
     IERC20 refundToken;
-    uint64 refundAfter;
     address refundReceiver;
+    uint64 refundAfter;
     uint120 refundPrice;
 
     bool public whitelistingAllowed;
@@ -128,8 +128,8 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         feeCollector = params.feeCollector;
         startTime = params.startTime;
         refundToken = params.refundToken;
-        refundAfter = params.refundAfter;
         refundReceiver = params.refundReceiver;
+        refundAfter = params.refundAfter;
         refundPrice = params.refundPrice;
 
         whitelistingAllowed = true;
@@ -234,7 +234,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
         for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
-            User memory user = users1[userAddress];
+            User storage user = users1[userAddress];
 
             if (
                 user.claimedUnlocksCount == 0 &&
@@ -271,7 +271,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(passedUnlocksCount > 0, "SHOVesting: no unlocks passed");
         uint16 currentUnlock = passedUnlocksCount - 1;
         require(currentUnlock < unlockPeriods.length - 1, "SHOVesting: eliminating in the last unlock");
-        require(refundCompleted || refundPrice == 0, "SHOVesting: refund period");
+        require(refundCompleted || refundPrice == 0, "SHOVesting: refund not completed");
 
         for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];

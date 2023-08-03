@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO smart contract", function() {
-    let owner, feeCollector, refundReceiver, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, contractView;
+    let owner, feeCollector, refundReceiver, user1, user2, user3, contract, shoToken, refundToken, shoTokenDecimals, contractView;
 
     const PRECISION_LOSS = "10000000000000000";
     
@@ -10,7 +10,7 @@ describe("SHO smart contract", function() {
         return ethers.utils.parseUnits(value.toString(), decimals);
     }
 
-    const whitelistUsers = async(whitelist, splitWhitelisting = false) => {
+    const whitelistUsers = async(whitelist, splitWhitelisting = fals, refundPrice = 0) => {
         const allocations = whitelist.allocations.map((raw) => parseUnits(raw));
 
         await expect(contract.whitelistUsers([owner.address], [1, 1], true)).to.be.revertedWith("SHOVesting: different array lengths");
@@ -51,14 +51,29 @@ describe("SHO smart contract", function() {
             .to.be.revertedWith("SHOVesting: whitelisting not allowed anymore");
 
         expect(await contract.globalTotalAllocation1()).to.equal(parseUnits(globalTotalAllocation1));
+
+        if (refundPrice > 0) {
+            const totalRefundAmount = parseUnits(globalTotalAllocation1 * refundPrice);
+            refundToken.transfer(contract.address, totalRefundAmount);
+        }
     }
 
-    const init = async(unlockPercentages, unlockPeriods, baseFee1, whitelist, _shoTokenDecimals = 18, _shoTokenBurnable = false, splitWhitelisting = false, shiftToStartTime = true) => {
+    const init = async(
+        unlockPercentages, 
+        unlockPeriods, 
+        baseFee1, 
+        whitelist, 
+        _shoTokenDecimals = 18, 
+        splitWhitelisting = false, 
+        shiftToStartTime = true, 
+        refundAfter = 0,
+        refundPrice = 0
+    ) => {
         shoTokenDecimals = _shoTokenDecimals;
-        shoTokenBurnable = _shoTokenBurnable;
         const startTime = Number(await time.latest()) + 300;
-        const ERC20Mock = await ethers.getContractFactory(shoTokenBurnable ? "ERC20MockBurnable" : "ERC20Mock");
-        shoToken = await ERC20Mock.deploy("MOCK1", "MOCK1", owner.address, parseUnits(100000000), shoTokenDecimals);
+        const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
+        shoToken = await ERC20Mock.deploy("MOCK1", "MOCK1", owner.address, parseUnits(1e8), shoTokenDecimals);
+        refundToken = await ERC20Mock.deploy("MOCK1", "MOCK1", owner.address, parseUnits(1e8), shoTokenDecimals);
         
         const Factory = await ethers.getContractFactory("SHOVestingFactory");
         const factory = await Factory.deploy();
@@ -70,10 +85,10 @@ describe("SHO smart contract", function() {
             baseFeePercentage1: baseFee1,
             feeCollector: feeCollector.address,
             startTime: startTime,
-            refundToken: refundReceiver.address,
-            refundAfter: 0,
+            refundToken: refundToken.address,
             refundReceiver: refundReceiver.address,
-            refundPrice: 0
+            refundAfter: refundAfter,
+            refundPrice: parseUnits(refundPrice)
         }
 
         const Contract = await ethers.getContractFactory("SHOVesting");
@@ -87,7 +102,7 @@ describe("SHO smart contract", function() {
         expect(await contract.feeCollector()).to.equal(feeCollector.address);
         expect(await contract.baseFeePercentage1()).to.equal(baseFee1);
 
-        await whitelistUsers(whitelist, splitWhitelisting);
+        await whitelistUsers(whitelist, splitWhitelisting, refundPrice);
 
         await expect(contract.update()).to.be.revertedWith("SHOVesting: before startTime");
 
@@ -211,6 +226,24 @@ describe("SHO smart contract", function() {
         expect(res.vested).to.closeTo(expectedVested, PRECISION_LOSS);
         expect(res.minClaimable).to.closeTo(expectedMinClaimable, PRECISION_LOSS);
         expect(res.maxClaimable).to.closeTo(expectedMaxClaimable, PRECISION_LOSS);
+    }
+    
+    const refund = async(user, expectedTokens, expectedRefunded, expectedRemainder) => {
+        expectedTokens = parseUnits(expectedTokens);
+        expectedRefunded = parseUnits(expectedRefunded);
+        expectedRemainder = parseUnits(expectedRemainder);
+
+        const userBalanceBefore = await refundToken.balanceOf(user.address);
+        const refundReceiverBalanceBefore1 = await shoToken.balanceOf(refundReceiver.address);
+        const refundReceiverBalanceBefore2 = await refundToken.balanceOf(refundReceiver.address);
+        await contract.connect(feeCollector).refund([user.address]);
+        const userBalanceAfter = await refundToken.balanceOf(user.address);
+        const refundReceiverBalanceAfter1 = await shoToken.balanceOf(refundReceiver.address);
+        const refundReceiverBalanceAfter2 = await refundToken.balanceOf(refundReceiver.address);
+
+        expect(userBalanceAfter).to.equal(userBalanceBefore.add(expectedRefunded));
+        expect(refundReceiverBalanceAfter1).to.equal(refundReceiverBalanceBefore1.add(expectedTokens));
+        expect(refundReceiverBalanceAfter2).to.equal(refundReceiverBalanceBefore2.add(expectedRemainder));
     }
 
     before(async () => {
@@ -395,7 +428,6 @@ describe("SHO smart contract", function() {
                     allocations: [1000, 2000]
                 },
                 18,
-                false,
                 true,
                 true
             );
@@ -419,6 +451,71 @@ describe("SHO smart contract", function() {
             await claim1(user1, true);
             await collectFees(false, 120, 480, 0, true);
             await collectFees(true);
+        });
+    });
+
+    describe("refund", async() => {
+        before(async() => {
+            await init(
+                [500000, 500000],
+                [0, 2592000],
+                300000,
+                {
+                    wallets: [user1.address, user2.address],
+                    allocations: [1000, 1000]
+                },
+                18,
+                false,
+                true,
+                86400,
+                0.1
+            );
+        });
+
+        it("first unlock - user 1 claims", async() => {
+            await claim1(user1, false, 350);
+        });
+
+        it("refund and elimination not possible yet", async() => {
+            await expect(contract.connect(owner).eliminateUsers1([user1.address])).to.be.revertedWith("SHOVesting: refund not completed");
+            await expect(contract.connect(owner).refund([user1.address])).to.be.revertedWith("SHOVesting: no refund period");
+        });
+
+        it("collect fees", async() => {
+            await collectFees(false, 300, 0, false);
+        });
+
+        it("refund", async() => {
+            await time.increase(86400);
+            await refund(user1, 0, 0, 0);
+            await refund(user2, 1000, 100, 100);
+
+            await checkUserInfo(user2, 0, 0, 0, 0, 0, 0);
+
+            await expect(contract.refund([])).to.be.revertedWith("SHOVesting: refund completed");
+        });
+
+        it("refunded user can't claim", async() => {
+            await expect(contract.connect(user2).functions["claimUser1()"]()).to.be.revertedWith("SHOVesting: refunded");
+        });
+
+        it("refunded user can't be eliminated", async() => {
+            await expect(contract.connect(owner).eliminateUsers1([user2.address])).to.be.revertedWith("SHOVesting: refunded");
+        });
+
+        it("second unlock - claim, collect fees", async() => {
+            await shoToken.connect(owner).transfer(contract.address, parseUnits(150));
+
+            await time.increase(2592000);
+            await expect(contract.connect(user2).functions["claimUser1()"]()).to.be.revertedWith("SHOVesting: refunded");
+
+            await claim1(user1, false, 350);
+            await claim1(user1, true);
+            
+            await checkUserInfo(user2, 0, 0, 0, 0, 0, 0);
+
+            await collectFees(false, 150, 0, false);
+            expect(await shoToken.balanceOf(contract.address)).to.equal(0);
         });
     });
 });

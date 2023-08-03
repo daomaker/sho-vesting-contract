@@ -90,6 +90,11 @@ contract SHOView {
 
         SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
 
+        if (user.refunded) {
+            totalUnlocked = 0;
+            return totalUnlocked;
+        }
+
         if (user.eliminatedAfterUnlock > 0) {
             currentUnlock = user.eliminatedAfterUnlock - 1;
         }
@@ -123,6 +128,11 @@ contract SHOView {
         uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
 
         SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.refunded) {
+            upcomingClaimable = 0;
+            return upcomingClaimable;
+        }
+
         if (user.eliminatedAfterUnlock > 0) {
             upcomingClaimable = 0;
         } else {
@@ -140,6 +150,11 @@ contract SHOView {
         uint32 currentUnlockPercentage = passedUnlocksCount > 0 ? shoContract.unlockPercentages(passedUnlocksCount - 1) : 0;
         
         SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.refunded) {
+            vested = 0;
+            return vested;
+        }
+
         if (user.eliminatedAfterUnlock > 0) {
             vested = 0;
         } else {
@@ -157,6 +172,11 @@ contract SHOView {
         uint16 currentUnlock = passedUnlocksCount - 1;
 
         SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.refunded) {
+            minClaimable = 0;
+            return minClaimable;
+        }
+
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
         currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
         minClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
@@ -172,6 +192,11 @@ contract SHOView {
         uint16 currentUnlock = passedUnlocksCount - 1;
 
         SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        if (user.refunded) {
+            maxClaimable = 0;
+            return maxClaimable;
+        }
+
         uint32 lastUnlockPercentage = user.claimedUnlocksCount > 0 ? shoContract.unlockPercentages(user.claimedUnlocksCount - 1) : 0;
         currentUnlock = user.eliminatedAfterUnlock > 0 ? user.eliminatedAfterUnlock - 1 : currentUnlock;
         maxClaimable = _applyPercentage(user.allocation, shoContract.unlockPercentages(currentUnlock) - lastUnlockPercentage);
