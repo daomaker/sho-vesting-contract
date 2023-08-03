@@ -27,9 +27,9 @@ describe("SHO smart contract", function() {
             await contract.whitelistUsers(whitelist.wallets.slice(0, 1), allocations.slice(0, 1), false);
 
             await expect(contract.whitelistUsers(whitelist.wallets, allocations, false))
-                .to.be.revertedWith("SHOVesting: some users are already whitelisted");
+                .to.be.revertedWith("SHOVesting: already whitelisted");
             await expect(contract.whitelistUsers(whitelist.wallets, allocations, false))
-                .to.be.revertedWith("SHOVesting: some users are already whitelisted");
+                .to.be.revertedWith("SHOVesting: already whitelisted");
 
             await contract.whitelistUsers(whitelist.wallets.slice(1, len), allocations.slice(1, len), true);
         } else {
@@ -162,7 +162,7 @@ describe("SHO smart contract", function() {
         contract = contract.connect(owner);
 
         if (eliminatedAlready) {
-            await expect(contract.eliminateUsers1([user.address])).to.be.revertedWith("SHOVesting: some user already eliminated");
+            await expect(contract.eliminateUsers1([user.address])).to.be.revertedWith("SHOVesting: already eliminated");
             return;
         }
 
@@ -248,7 +248,7 @@ describe("SHO smart contract", function() {
             await expect(contract.eliminateUsers1([user2.address])).to.be.revertedWith("Ownable: caller is not the owner");
 
             contract = contract.connect(owner);
-            await expect(contract.eliminateUsers1([feeCollector.address, user2.address])).to.be.revertedWith("SHOVesting: some user not option 1");
+            await expect(contract.eliminateUsers1([feeCollector.address, user2.address])).to.be.revertedWith("SHOVesting: not whitelisted");
         });
 
         it("first unlock - user 1 claims", async() => {

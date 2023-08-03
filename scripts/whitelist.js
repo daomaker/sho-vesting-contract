@@ -18,18 +18,11 @@ async function main() {
     const batches = Math.ceil(userAddresses.length / BATCH_SIZE);
     for (let i = 0; i < batches; i++) {
 
-        const gasData = await sho.provider.getFeeData()
-        const txOptions = {
-            maxFeePerGas: gasData.maxFeePerGas,
-            maxPriorityFeePerGas: gasData.maxPriorityFeePerGas.mul(3).div(2)
-        }
-
         console.log(`whitelisting batch ${i}`);
         const tx = await sho.whitelistUsers(
             userAddresses.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
             allocations.map(notParsed => ethers.utils.parseUnits(notParsed.toFixed(decimals), decimals)).slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE),
-            i == batches - 1,
-            txOptions
+            i == batches - 1
         );
         await tx.wait();
     }

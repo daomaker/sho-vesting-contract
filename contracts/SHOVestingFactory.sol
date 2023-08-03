@@ -22,28 +22,17 @@ contract SHOVestingFactory {
     }
 
     function deploy(
-        SHOVesting.InitParameters calldata parameters, 
+        SHOVesting.InitParameters calldata params, 
         bytes calldata data
     ) external returns (SHOVesting shoVesting) {
         shoVesting = SHOVesting(ClonesUpgradeable.clone(implementation));
-        shoVesting.init(
-            parameters.shoToken,
-            parameters.unlockPercentagesDiff,
-            parameters.unlockPeriodsDiff,
-            parameters.baseFeePercentage1,
-            parameters.feeCollector,
-            parameters.startTime,
-            parameters.refundToken,
-            parameters.refundAfter,
-            parameters.refundReceiver,
-            parameters.refundPrice
-        );
+        shoVesting.init(params);
         shoVesting.transferOwnership(msg.sender);
 
         emit SHOVestingDeployment(
             msg.sender,
             address(shoVesting),
-            parameters
+            params
         );
     }
 }
