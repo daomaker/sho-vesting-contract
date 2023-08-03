@@ -23,17 +23,23 @@ async function main() {
 
     const baseFeePercentage1 = 0;
 
+    const params = {
+        shoToken: shoToken,
+        unlockPercentagesDiff: unlockPercentagesDiff,
+        unlockPeriodsDiff: unlockPeriodsDiff,
+        baseFeePercentage1: baseFeePercentage1,
+        feeCollector: feeCollector,
+        startTime: startTime,
+        refundToken: ethers.constants.AddressZero,
+        refundReceiver: ethers.constants.AddressZero,
+        refundAfter: 0,
+        refundPrice:0
+    }
+
     const SHOVesting = await ethers.getContractFactory("SHOVesting");
     const shoVesting = await SHOVesting.deploy();
     await shoVesting.deployed();
-    await shoVesting.init({
-        shoToken,
-        unlockPercentagesDiff,
-        unlockPeriodsDiff,
-        baseFeePercentage1,
-        feeCollector,
-        startTime
-    });
+    await shoVesting.init({params});
 
     console.log("SHOVesting deployed at:", shoVesting.address);
 }
