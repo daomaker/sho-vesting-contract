@@ -9,21 +9,12 @@ import "./SHOVesting.sol";
  * @notice SHOVesting creates new instances of SHOVesting as minimal proxies.
  */
 contract SHOVestingFactory {
-    struct Parameters {
-        IERC20 shoToken;
-        uint32[] unlockPercentagesDiff;
-        uint32[] unlockPeriodsDiff;
-        uint32 baseFeePercentage1;
-        address feeCollector;
-        uint64 startTime;
-    }
-
     address public implementation;
 
     event SHOVestingDeployment(
         address deployer,
         address deployedAt,
-        Parameters parameters
+        SHOVesting.InitParameters parameters
     );
 
     constructor() {
@@ -31,7 +22,7 @@ contract SHOVestingFactory {
     }
 
     function deploy(
-        Parameters calldata parameters, 
+        SHOVesting.InitParameters calldata parameters, 
         bytes calldata data
     ) external returns (SHOVesting shoVesting) {
         shoVesting = SHOVesting(ClonesUpgradeable.clone(implementation));
@@ -41,7 +32,11 @@ contract SHOVestingFactory {
             parameters.unlockPeriodsDiff,
             parameters.baseFeePercentage1,
             parameters.feeCollector,
-            parameters.startTime
+            parameters.startTime,
+            parameters.refundToken,
+            parameters.refundAfter,
+            parameters.refundReceiver,
+            parameters.refundPrice
         );
         shoVesting.transferOwnership(msg.sender);
 

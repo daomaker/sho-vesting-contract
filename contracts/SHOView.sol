@@ -10,12 +10,14 @@ contract SHOView {
         (
             uint16 claimedUnlocksCount,
             uint16 eliminatedAfterUnlock,
-            uint120 allocation
+            uint120 allocation,
+            bool refunded
         ) = shoContract.users1(userAddress);
 
         user.claimedUnlocksCount = claimedUnlocksCount;
         user.eliminatedAfterUnlock = eliminatedAfterUnlock;
         user.allocation = allocation;
+        user.refunded = refunded;
     }
 
     function getUserOption(SHOVesting shoContract, address userAddress) public view returns (uint8 userOption) {
@@ -34,8 +36,16 @@ contract SHOView {
     function areEliminated(SHOVesting shoContract, address[] calldata userAddresses) public view returns (uint16[] memory eliminated) {
         eliminated = new uint16[](userAddresses.length);
         for (uint256 i = 0; i < userAddresses.length; i++) {
-            (, uint16 eliminatedAfterUnlock,) = shoContract.users1(userAddresses[i]);
+            (, uint16 eliminatedAfterUnlock,,) = shoContract.users1(userAddresses[i]);
             eliminated[i] = eliminatedAfterUnlock;
+        }
+    }
+    
+    function areRefunded(SHOVesting shoContract, address[] calldata userAddresses) public view returns (bool[] memory refunded) {
+        refunded = new bool[](userAddresses.length);
+        for (uint256 i = 0; i < userAddresses.length; i++) {
+            (,,, bool _refunded) = shoContract.users1(userAddresses[i]);
+            refunded[i] = _refunded;
         }
     }
 

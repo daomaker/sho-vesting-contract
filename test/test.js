@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { time } = require("@openzeppelin/test-helpers");
 
 describe("SHO smart contract", function() {
-    let owner, feeCollector, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, contractView;
+    let owner, feeCollector, refundReceiver, user1, user2, user3, contract, shoToken, shoTokenDecimals, shoTokenBurnable, contractView;
 
     const PRECISION_LOSS = "10000000000000000";
     
@@ -69,21 +69,18 @@ describe("SHO smart contract", function() {
             unlockPeriodsDiff: unlockPeriods,
             baseFeePercentage1: baseFee1,
             feeCollector: feeCollector.address,
-            startTime: startTime
+            startTime: startTime,
+            refundToken: refundReceiver.address,
+            refundAfter: 0,
+            refundReceiver: refundReceiver.address,
+            refundPrice: 0
         }
 
         const Contract = await ethers.getContractFactory("SHOVesting");
         contract = await Contract.attach(await factory.callStatic.deploy(params, "0x"));
         await factory.deploy(params, "0x");
 
-        await expect(contract.init(
-            params.shoToken,
-            params.unlockPercentagesDiff,
-            params.unlockPeriodsDiff,
-            params.baseFeePercentage1,
-            params.feeCollector,
-            params.startTime
-        )).to.be.revertedWith("Initializable");
+        await expect(contract.init(params)).to.be.revertedWith("Initializable");
 
         expect(await contract.shoToken()).to.equal(shoToken.address);
         expect(await contract.startTime()).to.equal(startTime);
@@ -217,7 +214,7 @@ describe("SHO smart contract", function() {
     }
 
     before(async () => {
-        [owner, feeCollector, user1, user2, user3] = await ethers.getSigners();
+        [owner, feeCollector, refundReceiver, user1, user2, user3] = await ethers.getSigners();
         const ContractView = await ethers.getContractFactory("SHOView");
         contractView = await ContractView.deploy();
     });
