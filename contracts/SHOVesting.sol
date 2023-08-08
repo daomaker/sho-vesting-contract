@@ -12,6 +12,7 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
 
+    uint32 constant public VERSION = 2;
     uint32 constant internal HUNDRED_PERCENT = 1e6;
     uint32 constant internal REFUND_PERIOD_DURATION = 86400 * 3;
 
