@@ -242,9 +242,9 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         update();
 
         uint refundAt = startTime + refundAfter;
+        require(!refundCompleted, "SHOVesting: refund completed");
         require(refundPrice > 0, "SHOVesting: no refund");
         require(block.timestamp >= refundAt && block.timestamp <= refundAt + REFUND_MAX_DURATION, "SHOVesting: no refund period");
-        require(!refundCompleted, "SHOVesting: refund completed");
 
         for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
