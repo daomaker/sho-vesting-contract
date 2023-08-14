@@ -49,6 +49,14 @@ contract SHOView {
         }
     }
 
+    function haveClaimed(SHOVesting shoContract, address[] calldata userAddresses) public view returns (bool[] memory claimed) {
+        claimed = new bool[](userAddresses.length);
+        for (uint256 i = 0; i < userAddresses.length; i++) {
+            (uint claimedUnlocksCount,,,) = shoContract.users1(userAddresses[i]);
+            claimed[i] = claimedUnlocksCount > 0;
+        }
+    }
+
     function getPassedUnlocksCount(SHOVesting shoContract) public view returns (uint16 passedUnlocksCount) {
         if (shoContract.startTime() <= block.timestamp) {
             passedUnlocksCount = shoContract.getPassedUnlocksCount();

@@ -120,8 +120,12 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint32[] memory _unlockPeriods = _buildArraySum(params.unlockPeriodsDiff);
         require(_unlockPercentages[_unlockPercentages.length - 1] == HUNDRED_PERCENT, "SHOVesting: invalid unlock percentages");
 
-        require(params.refundAfter <= 86400 * 31, "SHOVesting: refund after too far");
         require(params.shoToken != params.refundToken, "SHOVesting: same tokens");
+        if (params.refundPrice > 0) {
+            require(params.refundAfter > 0, "SHOVesting: invalid refundAfter");
+            require(address(params.refundToken) != address(0), "SHOVesting: invalid refundToken");
+            require(params.refundReceiver != address(0), "SHOVesting: invalid refundReceiver");
+        }
 
         shoToken = params.shoToken;
         unlockPercentages = _unlockPercentages;
