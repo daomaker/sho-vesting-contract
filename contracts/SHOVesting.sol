@@ -125,6 +125,10 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             require(params.refundAfter > 0, "SHOVesting: invalid refundAfter");
             require(address(params.refundToken) != address(0), "SHOVesting: invalid refundToken");
             require(params.refundReceiver != address(0), "SHOVesting: invalid refundReceiver");
+        } else {
+            require(params.refundAfter == 0, "SHOVesting: invalid refundAfter");
+            require(address(params.refundToken) == address(0), "SHOVesting: invalid refundToken");
+            require(params.refundReceiver == address(0), "SHOVesting: invalid refundReceiver");
         }
 
         shoToken = params.shoToken;

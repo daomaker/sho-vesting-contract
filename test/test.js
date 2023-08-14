@@ -85,9 +85,9 @@ describe("SHO smart contract", function() {
             baseFeePercentage1: baseFee1,
             feeCollector: feeCollector.address,
             startTime: startTime,
-            refundToken: refundToken.address,
-            refundReceiver: refundReceiver.address,
-            refundAfter: refundAfter,
+            refundToken: refundPrice > 0 ? refundToken.address : ethers.constants.AddressZero,
+            refundReceiver:  refundPrice > 0 ? refundReceiver.address : ethers.constants.AddressZero,
+            refundAfter:  refundPrice > 0 ? refundAfter : 0,
             refundPrice: parseUnits(refundPrice)
         }
 
