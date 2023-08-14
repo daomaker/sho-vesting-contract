@@ -13,8 +13,8 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using SafeERC20 for IERC20;
 
     uint32 constant public VERSION = 2;
+    uint32 constant public REFUND_MAX_DURATION = 7 days;
     uint32 constant internal HUNDRED_PERCENT = 1e6;
-    uint32 constant internal REFUND_PERIOD_DURATION = 86400 * 3;
 
     struct User {
         uint16 claimedUnlocksCount; // How many unlocks user has claimed. 
@@ -121,6 +121,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(_unlockPercentages[_unlockPercentages.length - 1] == HUNDRED_PERCENT, "SHOVesting: invalid unlock percentages");
 
         require(params.refundAfter <= 86400 * 31, "SHOVesting: refund after too far");
+        require(params.shoToken != params.refundToken, "SHOVesting: same tokens");
 
         shoToken = params.shoToken;
         unlockPercentages = _unlockPercentages;
@@ -134,6 +135,14 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         refundPrice = params.refundPrice;
 
         whitelistingAllowed = true;
+    }
+
+    /**
+     * @notice Allows to withdraw remaining refund token balance in exceptional situations.
+     */
+    function recoverRefundToken() external {
+        require(msg.sender == owner() || msg.sender == refundReceiver, "SHOVesting: unauthorized");
+        refundToken.transfer(refundReceiver, refundToken.balanceOf(address(this)));
     }
 
     /** 
@@ -222,7 +231,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     /**
      * @notice All users that haven't claimed tokens shall get refunded.
-     * @dev Anybody can call this function.
+     * @dev Anybody can call this function, but refunded tokens go to a predefined wallet.
      * @param userAddresses User addresses to be refunded (all that haven't claimed).
      */
     function refund(address[] calldata userAddresses) external nonReentrant {
@@ -230,7 +239,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
         uint refundAt = startTime + refundAfter;
         require(refundPrice > 0, "SHOVesting: no refund");
-        require(block.timestamp >= refundAt, "SHOVesting: no refund period");
+        require(block.timestamp >= refundAt && block.timestamp <= refundAt + REFUND_MAX_DURATION, "SHOVesting: no refund period");
         require(!refundCompleted, "SHOVesting: refund completed");
 
         for (uint256 i; i < userAddresses.length; i++) {
@@ -272,7 +281,12 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(passedUnlocksCount > 0, "SHOVesting: no unlocks passed");
         uint16 currentUnlock = passedUnlocksCount - 1;
         require(currentUnlock < unlockPeriods.length - 1, "SHOVesting: eliminating in the last unlock");
-        require(refundCompleted || refundPrice == 0, "SHOVesting: refund not completed");
+        require(
+            refundCompleted || 
+            refundPrice == 0 || 
+            block.timestamp > startTime + refundAfter + REFUND_MAX_DURATION, 
+            "SHOVesting: refund not completed"
+        );
 
         for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
