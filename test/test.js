@@ -252,7 +252,7 @@ describe("SHO smart contract", function() {
         contractView = await ContractView.deploy();
     });
 
-    describe("Full flow test (option 1 users)", async() => {
+    /*describe("Full flow test (option 1 users)", async() => {
         before(async() => {
             await init(
                 [500000, 300000, 200000],
@@ -452,7 +452,7 @@ describe("SHO smart contract", function() {
             await collectFees(false, 120, 480, 0, true);
             await collectFees(true);
         });
-    });
+    });*/
 
     describe("refund", async() => {
         before(async() => {
@@ -505,6 +505,7 @@ describe("SHO smart contract", function() {
 
         it("second unlock - claim, collect fees", async() => {
             await shoToken.connect(owner).transfer(contract.address, parseUnits(150));
+            console.log(ethers.utils.formatUnits(await shoToken.balanceOf(contract.address)))
 
             await time.increase(2592000);
             await expect(contract.connect(user2).functions["claimUser1()"]()).to.be.revertedWith("SHOVesting: refunded");

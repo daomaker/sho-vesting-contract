@@ -53,7 +53,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     bool public whitelistingAllowed;
     bool public refundCompleted;
-    uint16 public remainingUsersToRefund;
+    uint120 public totalClaimedAllocation;
 
     uint16 passedUnlocksCount;
     uint120 public globalTotalAllocation1;
@@ -169,7 +169,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(userAddresses.length == allocations.length, "SHOVesting: different array lengths");
 
         uint120 _globalTotalAllocation1;
-        uint16 _remainingUsersToRefund;
 
         for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
@@ -183,13 +182,11 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
             users1[userAddress].allocation = allocations[i];
             _globalTotalAllocation1 += allocations[i];
-            _remainingUsersToRefund++;
 
             emit Whitelist(userAddresses[i], allocations[i]);
         }
             
         globalTotalAllocation1 += _globalTotalAllocation1;
-        remainingUsersToRefund += _remainingUsersToRefund;
         
         if (last) {
             whitelistingAllowed = false;
@@ -220,7 +217,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         amountToClaim = _applyBaseFee(amountToClaim);
 
         if (user.claimedUnlocksCount == 0) {
-            remainingUsersToRefund--;
+            totalClaimedAllocation += user.allocation;
         }
 
         user.claimedUnlocksCount = currentUnlock + 1;
@@ -260,20 +257,18 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                 !user.refunded
             ) {
                 totalRefundedAllocation += user.allocation;
-                globalTotalAllocation1 -= user.allocation;
 
                 uint refundAmount = getRefundAmount(user.allocation);
 
                 shoToken.transfer(refundReceiver, user.allocation);
                 refundToken.transfer(userAddress, refundAmount);
 
-                remainingUsersToRefund--;
                 user.refunded = true;
                 emit Refund(userAddress, refundAmount);
             }
         }
 
-        if (remainingUsersToRefund == 0) {
+        if (globalTotalAllocation1 == totalClaimedAllocation + totalRefundedAllocation) {
             refundCompleted = true;
             refundToken.safeTransfer(refundReceiver, refundToken.balanceOf(address(this)));
         }
@@ -326,7 +321,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint16 currentUnlock = passedUnlocksCount - 1;
 
         uint32 lastUnlockPercentage = collectedFeesUnlocksCount > 0 ? unlockPercentages[collectedFeesUnlocksCount - 1] : 0;
-        uint120 globalAllocation1 = _applyPercentage(globalTotalAllocation1, unlockPercentages[currentUnlock] - lastUnlockPercentage);
+        uint120 globalAllocation1 = _applyPercentage(globalTotalAllocation1 - totalRefundedAllocation, unlockPercentages[currentUnlock] - lastUnlockPercentage);
         baseFee = _applyPercentage(globalAllocation1, baseFeePercentage1);
 
         uint120 extraFees1AllocationTillNow = _applyPercentage(extraFees1Allocation, unlockPercentages[currentUnlock]);
