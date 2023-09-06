@@ -66,7 +66,8 @@ describe("SHO smart contract", function() {
         _shoTokenDecimals = 18, 
         splitWhitelisting = false, 
         shiftToStartTime = true, 
-        refundAfter = 0,
+        refundStartTime = 0,
+        refundEndTime = 0,
         refundPrice = 0
     ) => {
         shoTokenDecimals = _shoTokenDecimals;
@@ -87,7 +88,8 @@ describe("SHO smart contract", function() {
             startTime: startTime,
             refundToken: refundPrice > 0 ? refundToken.address : ethers.constants.AddressZero,
             refundReceiver:  refundPrice > 0 ? refundReceiver.address : ethers.constants.AddressZero,
-            refundAfter:  refundPrice > 0 ? refundAfter : 0,
+            refundStartTime: refundPrice > 0 ? refundStartTime : 0,
+            refundEndTime: refundPrice > 0 ? refundEndTime : 0,
             refundPrice: parseUnits(refundPrice)
         }
 
@@ -236,7 +238,7 @@ describe("SHO smart contract", function() {
         const userBalanceBefore = await refundToken.balanceOf(user.address);
         const refundReceiverBalanceBefore1 = await shoToken.balanceOf(refundReceiver.address);
         const refundReceiverBalanceBefore2 = await refundToken.balanceOf(refundReceiver.address);
-        await contract.connect(feeCollector).refund([user.address]);
+        await contract.connect(user).refund();
         const userBalanceAfter = await refundToken.balanceOf(user.address);
         const refundReceiverBalanceAfter1 = await shoToken.balanceOf(refundReceiver.address);
         const refundReceiverBalanceAfter2 = await refundToken.balanceOf(refundReceiver.address);
@@ -252,7 +254,7 @@ describe("SHO smart contract", function() {
         contractView = await ContractView.deploy();
     });
 
-    /*describe("Full flow test (option 1 users)", async() => {
+    describe("Full flow test (option 1 users)", async() => {
         before(async() => {
             await init(
                 [500000, 300000, 200000],
@@ -452,10 +454,15 @@ describe("SHO smart contract", function() {
             await collectFees(false, 120, 480, 0, true);
             await collectFees(true);
         });
-    });*/
+    });
 
     describe("refund", async() => {
+        let refundStartTime, refundEndTime
+
         before(async() => {
+            refundStartTime = Number(await time.latest()) + 86400;
+            refundEndTime = refundStartTime + 86400;
+            
             await init(
                 [500000, 500000],
                 [0, 2592000],
@@ -467,7 +474,8 @@ describe("SHO smart contract", function() {
                 18,
                 false,
                 true,
-                86400,
+                refundStartTime,
+                refundEndTime,
                 0.1
             );
         });
@@ -476,9 +484,8 @@ describe("SHO smart contract", function() {
             await claim1(user1, false, 350);
         });
 
-        it("refund and elimination not possible yet", async() => {
-            await expect(contract.connect(owner).eliminateUsers1([user1.address])).to.be.revertedWith("SHOVesting: refund not completed");
-            await expect(contract.connect(owner).refund([user1.address])).to.be.revertedWith("SHOVesting: no refund period");
+        it("refund not possible yet", async() => {
+            await expect(contract.connect(user1).refund()).to.be.revertedWith("SHOVesting: no refund period");
         });
 
         it("collect fees", async() => {
@@ -486,14 +493,14 @@ describe("SHO smart contract", function() {
         });
 
         it("refund", async() => {
-            await time.increase(86400);
-            await refund(user1, 0, 0, 0);
-            await refund(user2, 1000, 100, 100);
-
+            await time.increaseTo(refundStartTime);
+            await refund(user2, 1000, 100, 0);
             await checkUserInfo(user2, 0, 0, 0, 0, 0, 0);
-
-            await expect(contract.refund([])).to.be.revertedWith("SHOVesting: refund completed");
         });
+
+        it("claimed user can't refund", async() => {
+            await expect(contract.connect(user1).refund()).to.be.revertedWith("SHOVesting: claimed");
+        })
 
         it("refunded user can't claim", async() => {
             await expect(contract.connect(user2).functions["claimUser1()"]()).to.be.revertedWith("SHOVesting: refunded");
@@ -503,9 +510,13 @@ describe("SHO smart contract", function() {
             await expect(contract.connect(owner).eliminateUsers1([user2.address])).to.be.revertedWith("SHOVesting: refunded");
         });
 
+        it("refund not possible after end time", async() => {
+            await time.increaseTo(refundEndTime + 1);
+            await expect(contract.connect(user1).refund()).to.be.revertedWith("SHOVesting: no refund period");
+        })
+
         it("second unlock - claim, collect fees", async() => {
             await shoToken.connect(owner).transfer(contract.address, parseUnits(150));
-            console.log(ethers.utils.formatUnits(await shoToken.balanceOf(contract.address)))
 
             await time.increase(2592000);
             await expect(contract.connect(user2).functions["claimUser1()"]()).to.be.revertedWith("SHOVesting: refunded");
@@ -518,5 +529,12 @@ describe("SHO smart contract", function() {
             await collectFees(false, 150, 0, false);
             expect(await shoToken.balanceOf(contract.address)).to.equal(0);
         });
+
+        it("recover unrefunded tokens", async() => {
+            const refundReceiverBalanceBefore = await refundToken.balanceOf(refundReceiver.address);
+            await contract.connect(owner).recoverRefundToken();
+            const refundReceiverBalanceAfter = await refundToken.balanceOf(refundReceiver.address)
+            expect(refundReceiverBalanceAfter).to.equal(refundReceiverBalanceBefore.add(parseUnits(100)));
+        })
     });
 });
