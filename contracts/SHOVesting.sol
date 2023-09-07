@@ -13,7 +13,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using SafeERC20 for IERC20;
 
     uint32 constant public VERSION = 2;
-    uint32 constant public REFUND_MAX_DURATION = 7 days;
     uint32 constant internal HUNDRED_PERCENT = 1e6;
 
     struct User {
