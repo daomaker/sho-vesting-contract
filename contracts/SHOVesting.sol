@@ -46,11 +46,11 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     address public feeCollector;
     uint32 public baseFeePercentage1;
 
-    IERC20 refundToken;
-    address refundReceiver;
-    uint120 refundPrice;
-    uint64 refundStartTime;
-    uint64 refundEndTime;
+    IERC20 public refundToken;
+    address public refundReceiver;
+    uint120 public refundPrice;
+    uint64 public refundStartTime;
+    uint64 public refundEndTime;
     bool public whitelistingAllowed;
 
     uint16 passedUnlocksCount;

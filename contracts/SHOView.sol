@@ -88,6 +88,30 @@ contract SHOView {
         }
     }
 
+    function getRefundInfo(
+        SHOVesting shoContract, 
+        address userAddress
+    ) public view returns (
+        IERC20 refundToken,
+        address refundReceiver,
+        uint120 refundPrice,
+        uint64 refundStartTime,
+        uint64 refundEndTime,
+        bool refunded
+    ) {
+        uint8 userOption = getUserOption(shoContract, userAddress);
+        require(userOption != 0);
+
+        SHOVesting.User memory user = _loadUser1(shoContract, userAddress);
+        
+        refundToken = shoContract.refundToken();
+        refundReceiver = shoContract.refundReceiver();
+        refundPrice = shoContract.refundPrice();
+        refundStartTime = shoContract.refundStartTime();
+        refundEndTime= shoContract.refundEndTime();
+        refunded = user.refunded;
+    }
+
     function getUserTotalUnlocked(SHOVesting shoContract, address userAddress) public view returns (uint120 totalUnlocked) {
         uint8 userOption = getUserOption(shoContract, userAddress);
         require(userOption != 0);
