@@ -10,33 +10,35 @@ describe("SHO smart contract", function() {
         return ethers.utils.parseUnits(value.toString(), decimals);
     }
 
-    const whitelistUsers = async(whitelist, splitWhitelisting = fals, refundPrice = 0) => {
+    const whitelistUsers = async(whitelist, splitWhitelisting = false) => {
         const allocations = whitelist.allocations.map((raw) => parseUnits(raw));
+        const refundableAmounts = whitelist.refundableAmounts.map((raw) => parseUnits(raw));
 
-        await expect(contract.whitelistUsers([owner.address], [1, 1], true)).to.be.revertedWith("SHOVesting: different array lengths");
-        await expect(contract.whitelistUsers([], [], true)).to.be.revertedWith("SHOVesting: zero length array");
+        await expect(contract.whitelistUsers([owner.address], [1, 1], [1, 1], true)).to.be.revertedWith("SHOVesting: different array lengths");
+        await expect(contract.whitelistUsers([], [], [], true)).to.be.revertedWith("SHOVesting: zero length array");
 
         contract = contract.connect(user1); 
-        await expect(contract.whitelistUsers(whitelist.wallets, allocations, true))
+        await expect(contract.whitelistUsers(whitelist.wallets, allocations, refundableAmounts, true))
             .to.be.revertedWith("Ownable: caller is not the owner");
 
         contract = contract.connect(owner); 
 
         if (splitWhitelisting) {
             const len = whitelist.wallets.length;
-            await contract.whitelistUsers(whitelist.wallets.slice(0, 1), allocations.slice(0, 1), false);
+            await contract.whitelistUsers(whitelist.wallets.slice(0, 1), allocations.slice(0, 1), refundableAmounts.slice(0, 1), false);
 
-            await expect(contract.whitelistUsers(whitelist.wallets, allocations, false))
+            await expect(contract.whitelistUsers(whitelist.wallets, allocations, refundableAmounts, false))
                 .to.be.revertedWith("SHOVesting: already whitelisted");
-            await expect(contract.whitelistUsers(whitelist.wallets, allocations, false))
+            await expect(contract.whitelistUsers(whitelist.wallets, allocations, refundableAmounts, false))
                 .to.be.revertedWith("SHOVesting: already whitelisted");
 
-            await contract.whitelistUsers(whitelist.wallets.slice(1, len), allocations.slice(1, len), true);
+            await contract.whitelistUsers(whitelist.wallets.slice(1, len), allocations.slice(1, len), refundableAmounts.slice(1, len), true);
         } else {
-            await contract.whitelistUsers(whitelist.wallets, allocations, true);
+            await contract.whitelistUsers(whitelist.wallets, allocations, refundableAmounts, true);
         }
 
         let globalTotalAllocation1 = 0;
+        let totalRefundAmount = 0;
         for (let i = 0; i < whitelist.wallets.length; i++) {
             const userInfo = await contract.users1(whitelist.wallets[i]);
             if (whitelist.wallets[i].toLowerCase() != feeCollector.address.toLowerCase()) {
@@ -44,18 +46,16 @@ describe("SHO smart contract", function() {
             }
 
             globalTotalAllocation1 += whitelist.allocations[i];
+            totalRefundAmount += whitelist.refundableAmounts[i];
         }
         
         await shoToken.transfer(contract.address, parseUnits(globalTotalAllocation1));
-        await expect(contract.whitelistUsers([owner.address], [1], false))
+        await expect(contract.whitelistUsers([owner.address], [1], [1], false))
             .to.be.revertedWith("SHOVesting: whitelisting not allowed anymore");
 
         expect(await contract.globalTotalAllocation1()).to.equal(parseUnits(globalTotalAllocation1));
 
-        if (refundPrice > 0) {
-            const totalRefundAmount = parseUnits(globalTotalAllocation1 * refundPrice);
-            refundToken.transfer(contract.address, totalRefundAmount);
-        }
+        await refundToken.transfer(contract.address, parseUnits(totalRefundAmount));
     }
 
     const init = async(
@@ -68,7 +68,7 @@ describe("SHO smart contract", function() {
         shiftToStartTime = true, 
         refundStartTime = 0,
         refundEndTime = 0,
-        refundPrice = 0
+        refundable = false
     ) => {
         shoTokenDecimals = _shoTokenDecimals;
         const startTime = Number(await time.latest()) + 300;
@@ -86,11 +86,11 @@ describe("SHO smart contract", function() {
             baseFeePercentage1: baseFee1,
             feeCollector: feeCollector.address,
             startTime: startTime,
-            refundToken: refundPrice > 0 ? refundToken.address : ethers.constants.AddressZero,
-            refundReceiver:  refundPrice > 0 ? refundReceiver.address : ethers.constants.AddressZero,
-            refundStartTime: refundPrice > 0 ? refundStartTime : 0,
-            refundEndTime: refundPrice > 0 ? refundEndTime : 0,
-            refundPrice: parseUnits(refundPrice)
+            refundToken: refundable ? refundToken.address : ethers.constants.AddressZero,
+            refundReceiver:  refundable ? refundReceiver.address : ethers.constants.AddressZero,
+            refundStartTime: refundable ? refundStartTime : 0,
+            refundEndTime: refundable ? refundEndTime : 0,
+        
         }
 
         const Contract = await ethers.getContractFactory("SHOVesting");
@@ -104,7 +104,7 @@ describe("SHO smart contract", function() {
         expect(await contract.feeCollector()).to.equal(feeCollector.address);
         expect(await contract.baseFeePercentage1()).to.equal(baseFee1);
 
-        await whitelistUsers(whitelist, splitWhitelisting, refundPrice);
+        await whitelistUsers(whitelist, splitWhitelisting);
 
         await expect(contract.update()).to.be.revertedWith("SHOVesting: before startTime");
 
@@ -262,7 +262,8 @@ describe("SHO smart contract", function() {
                 300000,
                 {
                     wallets: [user1.address, user2.address, user3.address],
-                    allocations: [1000, 1000, 2000]
+                    allocations: [1000, 1000, 2000],
+                    refundableAmounts: [0, 0, 0]
                 }
             );
         });
@@ -362,7 +363,8 @@ describe("SHO smart contract", function() {
                 300000,
                 {
                     wallets: [user1.address, user2.address],
-                    allocations: [1000, 1000]
+                    allocations: [1000, 1000],
+                    refundableAmounts: [0, 0]
                 }
             );
         });
@@ -427,7 +429,8 @@ describe("SHO smart contract", function() {
                 200000,
                 {
                     wallets: [user1.address, feeCollector.address],
-                    allocations: [1000, 2000]
+                    allocations: [1000, 2000],
+                    refundableAmounts: [0, 0]
                 },
                 18,
                 true,
@@ -469,14 +472,15 @@ describe("SHO smart contract", function() {
                 300000,
                 {
                     wallets: [user1.address, user2.address],
-                    allocations: [1000, 1000]
+                    allocations: [1000, 1000],
+                    refundableAmounts: [100, 100]
                 },
                 18,
                 false,
                 true,
                 refundStartTime,
                 refundEndTime,
-                0.1
+                true
             );
         });
 

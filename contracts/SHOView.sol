@@ -8,15 +8,17 @@ contract SHOView {
 
     function _loadUser1(SHOVesting shoContract, address userAddress) private view returns (SHOVesting.User memory user) {
         (
+            uint120 allocation,
+            uint120 refundableAmount,
             uint16 claimedUnlocksCount,
             uint16 eliminatedAfterUnlock,
-            uint120 allocation,
             bool refunded
         ) = shoContract.users1(userAddress);
 
         user.claimedUnlocksCount = claimedUnlocksCount;
         user.eliminatedAfterUnlock = eliminatedAfterUnlock;
         user.allocation = allocation;
+        user.refundableAmount = refundableAmount;
         user.refunded = refunded;
     }
 
@@ -36,7 +38,7 @@ contract SHOView {
     function areEliminated(SHOVesting shoContract, address[] calldata userAddresses) public view returns (uint16[] memory eliminated) {
         eliminated = new uint16[](userAddresses.length);
         for (uint256 i = 0; i < userAddresses.length; i++) {
-            (, uint16 eliminatedAfterUnlock,,) = shoContract.users1(userAddresses[i]);
+            (,,, uint16 eliminatedAfterUnlock,) = shoContract.users1(userAddresses[i]);
             eliminated[i] = eliminatedAfterUnlock;
         }
     }
@@ -44,7 +46,7 @@ contract SHOView {
     function areRefunded(SHOVesting shoContract, address[] calldata userAddresses) public view returns (bool[] memory refunded) {
         refunded = new bool[](userAddresses.length);
         for (uint256 i = 0; i < userAddresses.length; i++) {
-            (,,, bool _refunded) = shoContract.users1(userAddresses[i]);
+            (,,,, bool _refunded) = shoContract.users1(userAddresses[i]);
             refunded[i] = _refunded;
         }
     }
@@ -52,7 +54,7 @@ contract SHOView {
     function haveClaimed(SHOVesting shoContract, address[] calldata userAddresses) public view returns (bool[] memory claimed) {
         claimed = new bool[](userAddresses.length);
         for (uint256 i = 0; i < userAddresses.length; i++) {
-            (uint claimedUnlocksCount,,,) = shoContract.users1(userAddresses[i]);
+            (,,uint claimedUnlocksCount,,) = shoContract.users1(userAddresses[i]);
             claimed[i] = claimedUnlocksCount > 0;
         }
     }
@@ -94,9 +96,9 @@ contract SHOView {
     ) public view returns (
         IERC20 refundToken,
         address refundReceiver,
-        uint120 refundPrice,
         uint64 refundStartTime,
         uint64 refundEndTime,
+        uint120 refundableAmount,
         bool refunded
     ) {
         uint8 userOption = getUserOption(shoContract, userAddress);
@@ -106,10 +108,10 @@ contract SHOView {
         
         refundToken = shoContract.refundToken();
         refundReceiver = shoContract.refundReceiver();
-        refundPrice = shoContract.refundPrice();
         refundStartTime = shoContract.refundStartTime();
         refundEndTime= shoContract.refundEndTime();
         refunded = user.refunded;
+        refundableAmount = user.refundableAmount;
     }
 
     function getUserTotalUnlocked(SHOVesting shoContract, address userAddress) public view returns (uint120 totalUnlocked) {

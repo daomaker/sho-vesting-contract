@@ -16,9 +16,10 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint32 constant internal HUNDRED_PERCENT = 1e6;
 
     struct User {
+        uint120 allocation; // How many tokens user can claim in total without including fee.
+        uint120 refundableAmount; // How many refund tokens is user eligible for
         uint16 claimedUnlocksCount; // How many unlocks user has claimed. 
         uint16 eliminatedAfterUnlock; // At which unlock user has been eliminated.
-        uint120 allocation; // How many tokens he can claim in total without including fee.
         bool refunded; // Whether user was refunded.
     }
 
@@ -33,7 +34,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         address refundReceiver; // Address receiving refunded tokens.
         uint64 refundStartTime; // When refund starts.
         uint64 refundEndTime; // When refund ends.
-        uint120 refundPrice; // Exchange rate between refund token and vesting token.
     }
 
     mapping(address => User) public users1;
@@ -48,7 +48,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     IERC20 public refundToken;
     address public refundReceiver;
-    uint120 public refundPrice;
     uint64 public refundStartTime;
     uint64 public refundEndTime;
     bool public whitelistingAllowed;
@@ -56,6 +55,9 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint16 passedUnlocksCount;
     uint120 public globalTotalAllocation1;
     uint120 public totalRefundedAllocation;
+
+    uint120 public totalRefundableAmount;
+    uint120 public totalRefundedAmount;
 
     uint16 public collectedFeesUnlocksCount;
     uint120 public extraFees1Allocation;
@@ -119,15 +121,13 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(_unlockPercentages[_unlockPercentages.length - 1] == HUNDRED_PERCENT, "SHOVesting: invalid unlock percentages");
 
         require(params.shoToken != params.refundToken, "SHOVesting: same tokens");
-        if (params.refundPrice > 0) {
-            require(params.refundStartTime > params.startTime, "SHOVesting: invalid refundStartTime");
+        if (address(params.refundToken) != address(0)) {
+            require(params.refundStartTime >= params.startTime, "SHOVesting: invalid refundStartTime");
             require(params.refundEndTime > params.refundStartTime, "SHOVesting: invalid refundEndTime");
-            require(address(params.refundToken) != address(0), "SHOVesting: invalid refundToken");
             require(params.refundReceiver != address(0), "SHOVesting: invalid refundReceiver");
         } else {
             require(params.refundStartTime == 0, "SHOVesting: invalid refundStartTime");
             require(params.refundEndTime == 0, "SHOVesting: invalid refundEndTime");
-            require(address(params.refundToken) == address(0), "SHOVesting: invalid refundToken");
             require(params.refundReceiver == address(0), "SHOVesting: invalid refundReceiver");
         }
 
@@ -141,7 +141,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         refundReceiver = params.refundReceiver;
         refundStartTime = params.refundStartTime;
         refundEndTime = params.refundEndTime;
-        refundPrice = params.refundPrice;
 
         whitelistingAllowed = true;
     }
@@ -151,7 +150,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
      */
     function recoverRefundToken() external {
         require(msg.sender == owner() || msg.sender == refundReceiver, "SHOVesting: unauthorized");
-        refundToken.transfer(refundReceiver, refundToken.balanceOf(address(this)));
+        refundToken.safeTransfer(refundReceiver, refundToken.balanceOf(address(this)));
     }
 
     /** 
@@ -163,13 +162,16 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function whitelistUsers(
         address[] calldata userAddresses,
         uint120[] calldata allocations,
+        uint120[] calldata refundableAmounts,
         bool last
     ) external onlyOwner {
         require(whitelistingAllowed, "SHOVesting: whitelisting not allowed anymore");
         require(userAddresses.length != 0, "SHOVesting: zero length array");
         require(userAddresses.length == allocations.length, "SHOVesting: different array lengths");
+        require(userAddresses.length == refundableAmounts.length, "SHOVesting: different array lengths");
 
         uint120 _globalTotalAllocation1;
+        uint120 _totalRefundableAmount;
 
         for (uint256 i; i < userAddresses.length; i++) {
             address userAddress = userAddresses[i];
@@ -182,12 +184,15 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             require(users1[userAddress].allocation == 0, "SHOVesting: already whitelisted");
 
             users1[userAddress].allocation = allocations[i];
+            users1[userAddress].refundableAmount = refundableAmounts[i];
             _globalTotalAllocation1 += allocations[i];
+            _totalRefundableAmount += refundableAmounts[i];
 
             emit Whitelist(userAddresses[i], allocations[i]);
         }
             
         globalTotalAllocation1 += _globalTotalAllocation1;
+        totalRefundableAmount += _totalRefundableAmount;
         
         if (last) {
             whitelistingAllowed = false;
@@ -237,7 +242,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function refund() external nonReentrant {
         update();
 
-        require(refundPrice > 0, "SHOVesting: no refund");
         require(block.timestamp >= refundStartTime && block.timestamp <= refundEndTime, "SHOVesting: no refund period");
 
         address userAddress = msg.sender;
@@ -245,13 +249,16 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
         require(user.claimedUnlocksCount == 0, "SHOVesting: claimed");
         require(user.eliminatedAfterUnlock == 0, "SHOVesting: eliminated");
+        require(user.refundableAmount > 0, "SHOVesting: not refundable");
         require(!user.refunded, "SHOVesting: already refunded");
 
-        uint refundAmount = getRefundAmount(user.allocation);
-        shoToken.transfer(refundReceiver, user.allocation);
-        refundToken.transfer(userAddress, refundAmount);
+        uint120 refundAmount = user.refundableAmount;
+        shoToken.safeTransfer(refundReceiver, user.allocation);
+        refundToken.safeTransfer(userAddress, refundAmount);
 
         totalRefundedAllocation += user.allocation;
+        totalRefundedAmount += refundAmount;
+
         user.refunded = true;
         emit Refund(userAddress, refundAmount);
     }
@@ -332,10 +339,6 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         while (_passedUnlocksCount < maxReleases && timeSinceStart >= unlockPeriods[_passedUnlocksCount]) {
             _passedUnlocksCount++;
         }
-    }
-    
-    function getRefundAmount(uint allocation) public view returns (uint refundAmount) {
-        return allocation * refundPrice / 10 ** IERC20Metadata(address(shoToken)).decimals();
     }
 
     function getTotalUnlocksCount() public view returns (uint16 totalUnlocksCount) {
