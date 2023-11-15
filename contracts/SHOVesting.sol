@@ -146,7 +146,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     /**
-     * @notice Allows to withdraw remaining refund token balance in exceptional situations.
+     * @notice Allows to withdraw remaining refund token balance.
      */
     function recoverRefundToken() external {
         require(msg.sender == owner() || msg.sender == refundReceiver, "SHOVesting: unauthorized");
@@ -208,6 +208,11 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         update();
 
         User memory user = users1[userAddress];
+
+        if (userAddress != msg.sender) {
+            require(block.timestamp > refundEndTime, "SHOVesting: refund period");
+        }
+
         require(passedUnlocksCount > 0, "SHOVesting: no unlocks passed");
         require(user.claimedUnlocksCount < passedUnlocksCount, "SHOVesting: nothing to claim");
         require(!user.refunded, "SHOVesting: refunded");
