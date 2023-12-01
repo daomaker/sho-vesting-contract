@@ -484,6 +484,12 @@ describe("SHO smart contract", function() {
             );
         });
 
+        it("first unlock - user 1 blocked", async() => {
+            await contract.connect(owner).blockUsers([user1.address], true);
+            await expect(contract.connect(user1).functions["claimUser1()"]()).to.be.revertedWith("SHOVesting: blocked");
+            await contract.connect(owner).blockUsers([user1.address], false);
+        });
+
         it("first unlock - user 1 claims", async() => {
             await claim1(user1, false, 350);
         });

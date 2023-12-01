@@ -37,6 +37,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     mapping(address => User) public users1;
+    mapping(address => bool) public blockedUsers;
 
     uint32[] public unlockPercentages;
     uint32[] public unlockPeriods;
@@ -92,6 +93,11 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     event Refund(
         address user,
         uint refundAmount
+    );
+
+    event BlockUsers(
+        address[] userAddresses,
+        bool state
     );
 
     modifier onlyWhitelistedUser(address userAddress) {
@@ -200,6 +206,19 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     /**
+     * @notice Allows owner to block some wallets from claiming.
+     * @dev Used for wallets that don't complete offchain requirements.
+     * @param userAddresses User addresses to block/unblock
+     * @param state Whether to block/unblock
+     */
+    function blockUsers(address[] calldata userAddresses, bool state) external onlyOwner {
+        for (uint i; i < userAddresses.length; i++) {
+            blockedUsers[userAddresses[i]] = state;
+        }
+        emit BlockUsers(userAddresses, state);
+    }
+
+    /**
      * @notice Whitelisted users can claim their available tokens.
      * @dev There's still the baseFee deducted from their allocation.
      * @param userAddress The user address to claim tokens for.
@@ -216,6 +235,7 @@ contract SHOVesting is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(passedUnlocksCount > 0, "SHOVesting: no unlocks passed");
         require(user.claimedUnlocksCount < passedUnlocksCount, "SHOVesting: nothing to claim");
         require(!user.refunded, "SHOVesting: refunded");
+        require(!blockedUsers[userAddress], "SHOVesting: blocked");
 
         uint16 currentUnlock = passedUnlocksCount - 1;
         if (user.eliminatedAfterUnlock > 0) {
