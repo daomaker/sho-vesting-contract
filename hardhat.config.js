@@ -26,7 +26,7 @@ module.exports = {
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         },
         bsc: {
-            url: `https://bsc-dataseed.binance.org/`,
+            url: `https://rpc.ankr.com/bsc`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
         },
         step: {
@@ -36,6 +36,26 @@ module.exports = {
         arb: {
             url: `https://arbitrum-mainnet.infura.io`,
             accounts: [`0x${process.env.PRIVATE_KEY}`],
+        },
+        polygon: {
+            url: `https://rpc.ankr.com/polygon`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`]
+        },
+        kava: {
+            url: `https://evm.kava-rpc.com`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`]
+        },
+        linea: {
+            url: `https://rpc.linea.build`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`]
+        },
+        ava: {
+            url: `https://api.avax.network/ext/bc/C/rpc`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`]
+        },
+        zkSync: {
+            url: `https://mainnet.era.zksync.io`,
+            accounts: [`0x${process.env.PRIVATE_KEY}`]
         }
     },
     abiExporter: {
